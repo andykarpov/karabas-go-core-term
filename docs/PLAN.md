@@ -133,6 +133,13 @@ chacha20-poly1305@openssh.com, вход password / keyboard-interactive / public
 (~2 тыс. строк C, всё под нашим контролем, но свой код безопасности); (б) wolfSSH + wolfCrypt (GPL-3, проверенный
 клиент, больше кода и порт на голое железо). Рекомендация Claude — (а), с тестами против OpenSSH sshd на ПК.
 
+### Ф0.3 — ESP на стенде, первый заход (2026-11-18, Mini G, boot-ядро 26111352)
+
+`src/tools/esp_probe.py` через `AT+KARABAS=esp`. Модуль: AT 1.7.6.0, SDK 3.0.6-dev (NonOS), `+UART_CUR:115273,8,1,0,2`
+(CTS включён), `CWMODE_CUR:1`. **Wi-Fi не подключён**: `No AP`, `CWAUTOCONN:0`, `STAIP 0.0.0.0`, `CIPSTART` → `no ip`.
+Сетевые проверки не прошли — нужно подключить модуль к сети в Setup Wi-Fi boot-ядра (это сохраняет AP в ESP:
+делает пользователь). `AT+CIPMUX=0` при закрытом соединении отвечает ERROR (не важно). Ничего не сохранено, CIPMODE 0.
+
 ### Ф0.5 / Ф0.6 — площадь и загрузка (оценка по готовым ядрам, 2026-11-18)
 
 - Площадь: VexRiscv 16K / 16K отдельно — 2249 LUT, 19 RAMB16, 115.6 МГц (XST, core-agon); весь SoC Doom (VexRiscv 4K /
