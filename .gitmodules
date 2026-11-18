@@ -5,3 +5,6 @@
 	path = upstream/libvterm
 	url = https://github.com/neovim/libvterm
 	branch = mirror
+[submodule "upstream/monocypher"]
+	path = upstream/monocypher
+	url = https://github.com/LoupVaillant/Monocypher
