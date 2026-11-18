@@ -7,7 +7,8 @@
  clk_sys 65 MHz (the SoC, the pixels of 1024 x 768 at 60 Hz, the OSD, HDMI, the MCU link), clk_8 8.02 MHz
  (FT_CLK_OUT).
  Memory: the SRAM only. The SDRAM is never used (its activity disturbs USB, docs/PLAN.md): no clock, NOP.
- Serial: the USB serial port of the MCU = kg_mcu2 port 0 (Ф1); the ESP8266 UART pins in Ф2.
+ Serial: the USB serial port of the MCU = kg_mcu2 port 0; the ESP8266 on UART_RX / UART_TX / UART_CTS
+ (term_uart in term_soc, CTS active 0).
  Soft switches (the index of the item in the osd of core.json): 0 Font (the FL item), 1 Reset.
 */
 module karabas_minig_top (
@@ -104,9 +105,6 @@ assign WWR_N = 1'b1;
 assign WRESET_N = 1'b1;
 assign WD = 16'bz;
 assign ESP32_SPI_CS_N = 1'b1;
-assign UART_RX = 1'bz;
-assign UART_TX = 1'bz;
-assign UART_CTS = 1'bz;
 assign TAPE_OUT = 1'b0;
 assign MIDI_TX = 1'b1;
 assign ADC_CLK = 1'b0;
@@ -267,6 +265,9 @@ generate
 	end
 endgenerate
 
+wire esp_txd, esp_cts_n;
+assign UART_TX = esp_txd;
+assign UART_CTS = esp_cts_n;
 wire [23:0] vid_rgb;
 wire vid_hs, vid_vs, vid_de, cpu_run, dbg_wr;
 wire [7:0] dbg_byte;
@@ -281,6 +282,7 @@ term_soc soc (
 	.sw({ 16'd0, sw }),
 	.ser_out_data(port_out_data[7:0]), .ser_out_wr(port_out_wr[0]), .ser_out_ready(ser_out_ready),
 	.ser_in_data(ser_in_data), .ser_in_wr(ser_in_wr), .ser_in_full(port_in_full[0]), .ser_cfg(32'd0),
+	.esp_rxd(UART_RX), .esp_txd(esp_txd), .esp_cts_n(esp_cts_n),
 	.rgb(vid_rgb), .hs(vid_hs), .vs(vid_vs), .de(vid_de),
 	.dbg_byte(dbg_byte), .dbg_wr(dbg_wr), .dbg_exit(dbg_exit), .cpu_run(cpu_run),
 	.MA(MA), .MD_I(MD), .MD_O(md_o), .MD_OE_N(md_oe_n), .MWR_N(MWR_N), .MRD_N(MRD_N)

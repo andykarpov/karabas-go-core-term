@@ -105,6 +105,7 @@ static void on_line(const char *l) {
     if (!ok && !fail) return;
     switch (cur) {
     case C_INIT:
+        if (init_step == 0 && fail) { command(C_INIT, init_cmds[0]); break; }
         if (++init_step < INIT_N) command(C_INIT, init_cmds[init_step]);
         else { cur = C_NONE; ready = 1; }
         break;

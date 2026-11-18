@@ -42,7 +42,7 @@ struct EspModel {
         if (at_log) fprintf(at_log, "%s\n", c.c_str());
         say(c + "\r\n");                                    // the echo
         if (c == "AT" || c == "ATE0" || c == "ATE1" || c.rfind("AT+CIPMODE=0", 0) == 0) { say("\r\nOK\r\n"); return; }
-        if (c == "AT+CIPMUX=0") { say(sock >= 0 ? "\r\nOK\r\n" : "ERROR\r\n\r\nOK\r\n"); return; }
+        if (c == "AT+CIPMUX=0") { say(sock >= 0 ? "link is builded\r\n\r\nERROR\r\n" : "\r\nOK\r\n"); return; }
         if (c == "AT+GMR") { say("AT version:1.7.6.0(sim)\r\nSDK version:3.0.6-dev\r\nOK\r\n"); return; }
         if (c == "AT+CIFSR") { say("+CIFSR:STAIP,\"192.168.1.114\"\r\n+CIFSR:STAMAC,\"e8:68:e7:00:00:01\"\r\n\r\nOK\r\n"); return; }
         if (c == "AT+CWJAP_CUR?" || c == "AT+CWJAP?") { say("+CWJAP_CUR:\"simnet\",\"00:11:22:33:44:55\",6,-50\r\nOK\r\n"); return; }
