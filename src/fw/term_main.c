@@ -14,6 +14,7 @@
 #include "telnet.h"
 #include "charset.h"
 #include "ui.h"
+#include "book.h"
 
 static VTerm *vt;
 static tscreen ts;
@@ -225,6 +226,7 @@ int main(void) {
     kbd_hook = key_hook;
     esp_on_data = on_tcp;
     esp_init();
+    book_init();
     ui_open(vt);
     ui_status(vt, "Looking for the ESP8266 ...");
     push_screen();
@@ -242,6 +244,7 @@ int main(void) {
         if (n) to_screen((const uint8_t *)buf, (size_t)n);
         esp_poll();
         poll_net();
+        { static int was; book_poll(); if (book_ready() != was) { was = book_ready(); ui_redraw(); } }
         kbd_poll(vt);
         push_screen();
     }

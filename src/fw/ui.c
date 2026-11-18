@@ -3,14 +3,13 @@
 #include <string.h>
 #include "ui.h"
 #include "charset.h"
+#include "book.h"
 
-#define RECENT 8
+#define RECENT 24                          /* shown of the phonebook */
 
 static int open_;
 static struct conn f = { P_TELNET, "", 23, 0 };   /* the fields */
 static int focus;                                  /* 0 proto, 1 host, 2 port, 3 charset, 4 connect, 5.. recent */
-static struct conn recent[RECENT];
-static int nrecent;
 static char status[128] = "";
 static char ip[20] = "";
 static struct conn sess;
@@ -27,7 +26,8 @@ static void put(const char *s) { size_t n = strlen(s); if (on + n < sizeof out) 
 static void putf(const char *fmt, const char *a) { char b[256]; snprintf(b, sizeof b, fmt, a); put(b); }
 static void at(int row, int col) { char b[16]; snprintf(b, sizeof b, "\x1b[%d;%dH", row, col); put(b); }
 
-static int fields_n(void) { return 5 + nrecent; }
+static int nrec(void) { int k = book_count(); return k > RECENT ? RECENT : k; }
+static int fields_n(void) { return 5 + nrec(); }
 
 static void field(int idx, int row, const char *label, const char *value, int choice) {
     at(row, 4);
@@ -79,11 +79,12 @@ static void draw(void) {
     put(focus == 4 ? "\x1b[0;1;38;5;16;48;5;214m" : "\x1b[0;1;38;5;16;48;5;250m");
     put("  Connect  \x1b[0m");
     /* the recent list */
-    at(14, 2); put("\x1b[1mRecent\x1b[0m");
-    if (!nrecent) { at(15, 4); put("\x1b[38;5;244m(none yet)\x1b[0m"); }
-    for (int i = 0; i < nrecent; i++) {
+    at(14, 2); put("\x1b[1mPhonebook\x1b[0m");
+    put(book_ready() ? "\x1b[38;5;244m  (on the SD card; Del removes)\x1b[0m" : "\x1b[38;5;244m  (not on the SD card yet: kept until the core restarts)\x1b[0m");
+    if (!nrec()) { at(15, 4); put("\x1b[38;5;244m(empty: a connection made goes here)\x1b[0m"); }
+    for (int i = 0; i < nrec(); i++) {
         char s[128];
-        const struct conn *r = &recent[i];
+        const struct conn *r = book_get(i);
         if (r->proto == P_USB) snprintf(s, sizeof s, " %-10s %-46s %-10s ", "USB", "USB serial", charset_name(r->cs));
         else { char hp[80]; snprintf(hp, sizeof hp, "%s:%d", r->host, r->port); snprintf(s, sizeof s, " %-10s %-46s %-10s ", ui_proto_name(r->proto), hp, charset_name(r->cs)); }
         at(15 + i, 4);
@@ -125,17 +126,8 @@ void ui_status(VTerm *vt, const char *s) { (void)vt; snprintf(status, sizeof sta
 void ui_wifi(VTerm *vt, const char *s) { (void)vt; if (strcmp(ip, s)) { snprintf(ip, sizeof ip, "%s", s); draw(); } }
 void ui_session(const struct conn *c, int on_) { if (c) sess = *c; sess_on = on_; draw(); }
 
-void ui_remember(const struct conn *c) {
-    for (int i = 0; i < nrecent; i++)
-        if (recent[i].proto == c->proto && recent[i].port == c->port && !strcmp(recent[i].host, c->host)) {
-            memmove(&recent[1], &recent[0], i * sizeof recent[0]);
-            recent[0] = *c;
-            return;
-        }
-    if (nrecent < RECENT) nrecent++;
-    memmove(&recent[1], &recent[0], (nrecent - 1) * sizeof recent[0]);
-    recent[0] = *c;
-}
+void ui_remember(const struct conn *c) { if (c->proto != P_USB) book_put(c); }
+void ui_redraw(void) { draw(); }
 
 enum ui_action ui_key(VTerm *vt, VTermKey key, uint32_t ch, VTermModifier mod, struct conn *c) {
     (void)mod;
@@ -155,8 +147,11 @@ enum ui_action ui_key(VTerm *vt, VTermKey key, uint32_t ch, VTermModifier mod, s
         if (focus == 2) f.port /= 10;
         break;
     case VTERM_KEY_ESCAPE: return UI_BACK;
+    case VTERM_KEY_DEL:
+        if (focus >= 5) { book_del(focus - 5); if (focus >= fields_n()) focus = fields_n() - 1; }
+        break;
     case VTERM_KEY_ENTER:
-        if (focus >= 5) { f = recent[focus - 5]; }
+        if (focus >= 5) { f = *book_get(focus - 5); }
         if (f.proto != P_USB && (!f.host[0] || f.port <= 0)) { ui_status(vt, "Host and port, please"); focus = !f.host[0] ? 1 : 2; return UI_NONE; }
         *c = f;
         return UI_CONNECT;

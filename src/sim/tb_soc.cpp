@@ -3,6 +3,7 @@
 // usage: tb_soc <term.bin> <font_full.bin> [--in stream] [--rate clocks per byte (1000)] [--frames N (3)]
 //               [--shot frame file.ppm]... [--start-ms M: the stream starts after M ms (20)]
 //               [--host-out file: the bytes the core sent to the host]
+//               [--sd file: the save file of the core (BK_MOUNT -> this file, sectors as kg_l2_img gives them)]
 //               [--esp: the ESP8266 model on the UART pins (esp_model.h); --at-log file: its AT lines]
 //               [--keys F:K,...: at frame F a key press of HID usage K (hex, with mods << 8), released a frame later]
 //               [--hash-frames N: N frames after the stream was fed, SW bit 31 is set (the firmware prints
@@ -52,6 +53,10 @@ int main(int argc, char **argv) {
     EspModel esp(564);
     bool use_esp = false;
     uint32_t sw_init = 0;
+    const char *sd_path = 0;
+    std::vector<uint8_t> sdf;
+    int sd_st = 0, sd_i = 0, sd_ph = 0; uint32_t sd_sec = 0; bool sd_wr = false;
+    std::vector<uint8_t> sd_pipe;
     std::vector<std::pair<int, uint32_t>> keys;
     int rate = 1000, frames_max = 3, start_ms = 20, hash_frames = -1, fed_frame = -1;
     std::vector<std::pair<int, std::string>> shots;
@@ -63,6 +68,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--host-out")) host_out = fopen(argv[++i], "wb");
         else if (!strcmp(argv[i], "--esp")) use_esp = true;
         else if (!strcmp(argv[i], "--sw")) sw_init = strtoul(argv[++i], 0, 0);
+        else if (!strcmp(argv[i], "--sd")) sd_path = argv[++i];
         else if (!strcmp(argv[i], "--at-log")) esp.at_log = fopen(argv[++i], "w");
         else if (!strcmp(argv[i], "--keys")) {
             char *q = argv[++i];
@@ -77,6 +83,8 @@ int main(int argc, char **argv) {
     t->kbd = 0; t->kbd_wr = 0; t->ms_x = t->ms_y = t->ms_b = 0; t->ms_wr = 0; t->sw = 0;
     t->ser_out_data = 0; t->ser_out_wr = 0; t->ser_in_full = 0; t->ser_cfg = 0; t->MD_I = 0; t->esp_rxd = 1;
     t->sw = sw_init;
+    t->sdc_img_mounted = 0; t->sdc_img_size = 0; t->sdc_busy = 0; t->sdc_done = 0; t->sdc_error = 0; t->sdc_slot = 0;
+    t->sdc_byte_in_strobe = 0; t->sdc_byte_addr = 0; t->sdc_byte_in_data = 0; t->img_flush = 0;
     uint32_t prev_ma = 0;
     uint64_t k = 0;
     size_t fed = 0;
@@ -120,6 +128,32 @@ int main(int argc, char **argv) {
             t->ser_out_data = in[fed++]; t->ser_out_wr = 1; next_feed = k + rate;
         }
         if (use_esp) t->esp_rxd = esp.tick(t->esp_txd, t->esp_cts_n);
+        // the save file (slot 1): BK_MOUNT -> mounted; a sector read: busy, 512 bytes (one per 2 clocks), done;
+        // a write: busy, the addresses, the bytes 2 clocks after each, done
+        t->sdc_img_mounted = 0; t->sdc_done = 0; t->sdc_byte_in_strobe = 0;
+        if (sd_path && t->bk_mount) {
+            size_t want = (size_t)t->bk_size * 512;
+            sdf.assign(want, 0);
+            if (FILE *q = fopen(sd_path, "rb")) { size_t r = fread(sdf.data(), 1, want, q); (void)r; fclose(q); }
+            t->sdc_img_mounted = 2; t->sdc_img_size = want;
+            printf("SD mounted %zu bytes\n", want);
+        }
+        if (sd_path) {
+            if (sd_st == 0 && (t->sdc_rd & 2 || t->sdc_wr & 2)) { sd_wr = t->sdc_wr & 2; sd_sec = t->sdc_sector; sd_st = 1; sd_i = 0; sd_ph = 0; t->sdc_slot = 1; t->sdc_busy = 1; }
+            else if (sd_st == 1) {
+                if (!sd_wr) {
+                    if (sd_ph++ & 1) { t->sdc_byte_in_strobe = 1; t->sdc_byte_addr = sd_i; t->sdc_byte_in_data = sdf[sd_sec * 512 + sd_i]; if (++sd_i == 512) sd_st = 2; }
+                } else {
+                    // the address now, its byte two clocks later
+                    if (sd_i < 512) t->sdc_byte_addr = sd_i;
+                    if (sd_i >= 2) sdf[sd_sec * 512 + sd_i - 2] = t->sdc_byte_out_data;
+                    if (++sd_i == 514) sd_st = 2;
+                }
+            } else if (sd_st == 2) {
+                t->sdc_busy = 0; t->sdc_done = 1; sd_st = 0;
+                if (sd_wr) { FILE *q = fopen(sd_path, "wb"); fwrite(sdf.data(), 1, sdf.size(), q); fclose(q); }
+            }
+        }
         t->kbd_wr = 0;
         if (t->ser_in_wr) { host_bytes++; if (host_out) fputc(t->ser_in_data, host_out); }
         if (t->dbg_wr) { char c = (char)t->dbg_byte; if (c == '\n') { printf("DBG %s\n", line.c_str()); line.clear(); } else line += c; }

@@ -23,5 +23,6 @@ enum ui_action ui_key(VTerm *vt, VTermKey key, uint32_t ch, VTermModifier mod, s
 void ui_status(VTerm *vt, const char *s);        /* the status line (redraws when open) */
 void ui_wifi(VTerm *vt, const char *ip);          /* "" = no IP */
 void ui_session(const struct conn *c, int on);    /* the active session (shown at the top) */
-void ui_remember(const struct conn *c);           /* into the recent list */
+void ui_remember(const struct conn *c);           /* into the phonebook (book.c) */
+void ui_redraw(void);
 const char *ui_proto_name(int p);

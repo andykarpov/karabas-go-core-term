@@ -99,5 +99,6 @@
             "name": "Reset",
             "index": 1
         }
-    ]
+    ],
+    "save_dir": "/term"
 }

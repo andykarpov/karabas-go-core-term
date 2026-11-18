@@ -4,7 +4,7 @@ all: iss obj_soc/tb_soc obj_video/tb_video
 iss: iss.cpp
 	g++ -O2 -march=native -o $@ $<
 
-RTL := ../rtl/term_soc.v ../rtl/term_sram.v ../rtl/term_video.v ../rtl/term_uart.v ../rtl/vexriscv/VexRiscv_16k.v
+RTL := ../rtl/term_soc.v ../rtl/term_sram.v ../rtl/term_video.v ../rtl/term_uart.v ../rtl/term_sd.v ../rtl/vexriscv/VexRiscv_16k.v
 obj_soc/tb_soc: tb_soc.cpp esp_model.h $(RTL)
 	verilator --cc --exe --build -j 8 -O3 -Wno-fatal -Wno-lint -Wno-style \
 	  --top-module term_soc -Mdir obj_soc -o tb_soc \

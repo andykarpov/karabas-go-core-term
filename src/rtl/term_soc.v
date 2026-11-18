@@ -26,6 +26,7 @@
      80 W  DEF_FG   84 W  DEF_BG (0x00RRGGBB)
      88 W  CURSOR: { blink 24, shape 17..16, on 15, y 13..8, x 6..0 }
      8c W  SHOW (bit 0)              90 R  FRAMES (vsyncs)
+     c0..d0, 1000..17fc: term_sd (the save file of the phonebook, its sector buffer)
      100..1bc W  ROWTAB[(a - 100) / 4] = the row of screen row n: SRAM byte address / 1024 (12 bits)
      400..7fc W  PAL[(a - 400) / 4] = 0x00RRGGBB
  Loader (kg_mcu2 LD_*, the CPU in reset; the video does not read the SRAM then: link v2 asks LD_READY once
@@ -72,6 +73,27 @@ module term_soc #(
 	input wire esp_rxd,
 	output wire esp_txd,
 	output wire esp_cts_n,
+
+	// the save file (kg_mcu2 ENABLE_IMG, CAPS bit 1; term_sd)
+	input wire [7:0] sdc_img_mounted,
+	input wire [63:0] sdc_img_size,
+	output wire [7:0] sdc_rd,
+	output wire [7:0] sdc_wr,
+	output wire [31:0] sdc_sector,
+	input wire sdc_busy,
+	input wire sdc_done,
+	input wire sdc_error,
+	input wire [2:0] sdc_slot,
+	input wire sdc_byte_in_strobe,
+	input wire [8:0] sdc_byte_addr,
+	input wire [7:0] sdc_byte_in_data,
+	output wire [7:0] sdc_byte_out_data,
+	input wire [7:0] img_flush,
+	output wire bk_mount,
+	output wire bk_flushed,
+	output wire [31:0] bk_size,
+	output wire [7:0] bk_kind,
+	output wire [7:0] bk_result,
 
 	// video out (clk)
 	output wire [23:0] rgb,
@@ -271,7 +293,23 @@ reg rx_av = 1'b0;
 reg [1:0] esp_wait = 2'd0;                   // ESP_RX: rd_req, then two clocks for rd_valid
                             // SER_RX: a byte was waiting in the clock rx_q was read
 reg [31:0] io_dat = 32'd0;
-wire [11:0] io_off = { d_adr[9:0], 2'b00 };
+wire [13:0] io_off14 = { d_adr[11:0], 2'b00 };
+wire [11:0] io_off = io_off14[11:0];
+// term_sd: 0xc0..0xd0 and its sector buffer 0x1000..0x17fc; the other registers are below 0x1000
+wire sd_sel = io_off14[13:11] == 3'b010 || (io_off14[13:8] == 6'd0 && io_off14[7:4] >= 4'hc && io_off14[7:4] <= 4'hd);
+wire io_low = io_off14[13:12] == 2'b00;
+wire [31:0] sd_rd;
+wire sd_we = d_req && d_io && !io_ack && !cpu_reset && d_we && sd_sel;
+term_sd #(.SLOT(3'd1)) sd (
+	.clk(clk), .reset(reset),
+	.io_we(sd_we), .io_off(io_off14), .io_wd(d_dat_o), .io_rd(sd_rd),
+	.sdc_img_mounted(sdc_img_mounted), .sdc_img_size(sdc_img_size), .sdc_rd(sdc_rd), .sdc_wr(sdc_wr),
+	.sdc_sector(sdc_sector), .sdc_busy(sdc_busy), .sdc_done(sdc_done), .sdc_error(sdc_error), .sdc_slot(sdc_slot),
+	.sdc_byte_in_strobe(sdc_byte_in_strobe), .sdc_byte_addr(sdc_byte_addr), .sdc_byte_in_data(sdc_byte_in_data),
+	.sdc_byte_out_data(sdc_byte_out_data), .img_flush(img_flush),
+	.bk_mount(bk_mount), .bk_flushed(bk_flushed), .bk_size(bk_size), .bk_kind(bk_kind), .bk_result(bk_result),
+	.dbg()
+);
 reg [31:0] us = 32'd0, tcmp = 32'd0;
 reg [6:0] us_div = 7'd0;
 reg ten = 1'b0;
@@ -320,7 +358,9 @@ always @(posedge clk) begin
 
 	if (io_req && d_we) begin
 		io_ack <= 1'b1;
-		if (io_off[11:10] == 2'b01) begin            // 0x400..0x7fc
+		if (sd_sel || !io_low) begin
+			// term_sd (sd_we), or nothing
+		end else if (io_off[11:10] == 2'b01) begin            // 0x400..0x7fc
 			pal_we <= 1'b1;
 			pal_wa <= io_off[9:2];
 			pal_wd <= d_dat_o[23:0];
@@ -347,12 +387,15 @@ always @(posedge clk) begin
 			8'h8c: show <= d_dat_o[0];
 			default: ;
 		endcase
-	end else if (io_req && io_off[11:8] == 4'h0 && io_off[7:0] == 8'h70 && esp_wait != 2'd3) begin
+	end else if (io_req && io_low && io_off[11:8] == 4'h0 && io_off[7:0] == 8'h70 && esp_wait != 2'd3) begin
 		if (esp_wait == 2'd0) esp_rd_req <= 1'b1;
 		esp_wait <= esp_wait + 2'd1;                 // ack in the clock after rd_valid came
-	end else if (io_req && io_off[11:8] == 4'h0 && io_off[7:0] == 8'h60 && !io_wait) begin
+	end else if (io_req && io_low && io_off[11:8] == 4'h0 && io_off[7:0] == 8'h60 && !io_wait) begin
 		io_wait <= 1'b1;                             // rx_q = rx_mem[rx_rp] in the next clock
 		rx_av <= rx_n != 9'd0;                       // taken with rx_q: a byte written now is for the next read
+	end else if (io_req && sd_sel) begin
+		io_ack <= 1'b1;
+		io_dat <= sd_rd;
 	end else if (io_req) begin
 		io_ack <= 1'b1;
 		io_wait <= 1'b0;
