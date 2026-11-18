@@ -32,6 +32,7 @@ static uint8_t rep_key;
 static uint32_t rep_t, kbdn_seen;
 
 int kbd_layout(void) { return layout; }
+int (*kbd_hook)(VTermKey key, uint32_t ch, VTermModifier mod, int gui);
 
 static VTermModifier mods_of(uint8_t m) {
     int v = VTERM_MOD_NONE;
@@ -73,7 +74,8 @@ static void press(VTerm *vt, uint8_t k, uint8_t m) {
         else if (k >= 0x59 && k <= 0x61) key = (VTermKey)(VTERM_KEY_KP_1 + (k - 0x59));
         break;
     }
-    if (key != VTERM_KEY_NONE) { vterm_keyboard_key(vt, key, md); return; }
+    int gui = (m & 0x88) != 0;
+    if (key != VTERM_KEY_NONE) { if (!(kbd_hook && kbd_hook(key, 0, md, gui))) vterm_keyboard_key(vt, key, md); return; }
     if (k < 0x04 || k > 0x38) return;
     int i = k - 0x04;
     int letter = k <= 0x1d || (layout && ru[i][0] >= 0x400);
@@ -83,6 +85,7 @@ static void press(VTerm *vt, uint8_t k, uint8_t m) {
     else c = (uint8_t)us[i][up];
     if (!c) return;
     /* the shift is in the character; Ctrl / Alt go as modifiers */
+    if (kbd_hook && kbd_hook(VTERM_KEY_NONE, c, md, gui)) return;
     vterm_keyboard_unichar(vt, c, (VTermModifier)(md & ~VTERM_MOD_SHIFT));
 }
 

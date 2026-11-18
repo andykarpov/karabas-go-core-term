@@ -20,6 +20,9 @@
      60 R  SER_RX: bit 8 = a byte, 7..0 the byte (the read takes it) of the USB serial port
      64 W  SER_TX: a byte to the host (dropped when SER_STAT bit 1)
      68 R  SER_STAT: bit 0 rx bytes waiting, bit 1 tx full          6c R  SER_CFG: kg_mcu2 PORT_CFG port 0
+     70 R  ESP_RX: bit 8 = a byte, 7..0 the byte (the read takes it) of the ESP8266 UART (term_uart)
+     74 W  ESP_TX: a byte to the module (dropped when ESP_STAT bit 1)
+     78 R  ESP_STAT: bit 0 rx bytes waiting, bit 1 tx busy, bit 2 rx overrun (sticky), 27..16 rx count
      80 W  DEF_FG   84 W  DEF_BG (0x00RRGGBB)
      88 W  CURSOR: { blink 24, shape 17..16, on 15, y 13..8, x 6..0 }
      8c W  SHOW (bit 0)              90 R  FRAMES (vsyncs)
@@ -64,6 +67,11 @@ module term_soc #(
 	output reg ser_in_wr = 1'b0,
 	input wire ser_in_full,
 	input wire [31:0] ser_cfg,
+
+	// the ESP8266 UART (board pins)
+	input wire esp_rxd,
+	output wire esp_txd,
+	output wire esp_cts_n,
 
 	// video out (clk)
 	output wire [23:0] rgb,
@@ -234,6 +242,21 @@ always @(posedge clk) begin
 	rx_q <= rx_mem[rx_rp];
 end
 
+// ------------------------------------------------------------------ the ESP8266 UART
+
+reg esp_rd_req = 1'b0, esp_tx_wr = 1'b0;
+reg [7:0] esp_tx_d = 8'd0;
+wire esp_rd_valid, esp_tx_busy, esp_overrun;
+wire [7:0] esp_rd_data;
+wire [11:0] esp_rx_count;
+term_uart esp (
+	.clk(clk), .reset(reset),
+	.rxd(esp_rxd), .txd(esp_txd), .cts_n(esp_cts_n),
+	.tx_wr(esp_tx_wr), .tx_data(esp_tx_d), .tx_busy(esp_tx_busy),
+	.rd_req(esp_rd_req), .rd_valid(esp_rd_valid), .rd_data(esp_rd_data),
+	.rx_count(esp_rx_count), .rx_overrun(esp_overrun)
+);
+
 // ------------------------------------------------------------------ MMIO
 
 reg [31:0] cycles = 32'd0;
@@ -244,7 +267,9 @@ reg signed [11:0] ms_dx = 12'sd0, ms_dy = 12'sd0;
 reg [7:0] ms_btn = 8'd0;
 reg io_ack = 1'b0;
 reg io_wait = 1'b0;                          // SER_RX: one clock for rx_q
-reg rx_av = 1'b0;                            // SER_RX: a byte was waiting in the clock rx_q was read
+reg rx_av = 1'b0;
+reg [1:0] esp_wait = 2'd0;                   // ESP_RX: rd_req, then two clocks for rd_valid
+                            // SER_RX: a byte was waiting in the clock rx_q was read
 reg [31:0] io_dat = 32'd0;
 wire [11:0] io_off = { d_adr[9:0], 2'b00 };
 reg [31:0] us = 32'd0, tcmp = 32'd0;
@@ -264,6 +289,8 @@ wire io_req = d_req && d_io && !io_ack && !cpu_reset;
 always @(posedge clk) begin
 	io_ack <= 1'b0;
 	dbg_wr <= 1'b0;
+	esp_rd_req <= 1'b0;
+	esp_tx_wr <= 1'b0;
 	row_we <= 1'b0;
 	pal_we <= 1'b0;
 	ser_in_wr <= 1'b0;
@@ -307,6 +334,7 @@ always @(posedge clk) begin
 			8'h44: tcmp <= d_dat_o;
 			8'h48: ten <= d_dat_o[0];
 			8'h64: if (!ser_in_full) begin ser_in_data <= d_dat_o[7:0]; ser_in_wr <= 1'b1; end
+			8'h74: if (!esp_tx_busy) begin esp_tx_d <= d_dat_o[7:0]; esp_tx_wr <= 1'b1; end
 			8'h80: def_fg <= d_dat_o[23:0];
 			8'h84: def_bg <= d_dat_o[23:0];
 			8'h88: begin
@@ -319,12 +347,16 @@ always @(posedge clk) begin
 			8'h8c: show <= d_dat_o[0];
 			default: ;
 		endcase
+	end else if (io_req && io_off[11:8] == 4'h0 && io_off[7:0] == 8'h70 && esp_wait != 2'd3) begin
+		if (esp_wait == 2'd0) esp_rd_req <= 1'b1;
+		esp_wait <= esp_wait + 2'd1;                 // ack in the clock after rd_valid came
 	end else if (io_req && io_off[11:8] == 4'h0 && io_off[7:0] == 8'h60 && !io_wait) begin
 		io_wait <= 1'b1;                             // rx_q = rx_mem[rx_rp] in the next clock
 		rx_av <= rx_n != 9'd0;                       // taken with rx_q: a byte written now is for the next read
 	end else if (io_req) begin
 		io_ack <= 1'b1;
 		io_wait <= 1'b0;
+		esp_wait <= 2'd0;
 		case (io_off[7:0])
 			8'h0c: io_dat <= cycles;
 			8'h1c: io_dat <= ms;
@@ -351,6 +383,8 @@ always @(posedge clk) begin
 					io_dat <= 32'd0;
 			end
 			8'h68: io_dat <= { 30'd0, ser_in_full, rx_n != 9'd0 };
+			8'h70: io_dat <= { 23'd0, esp_rd_valid, esp_rd_data };   // rd_valid: the pulse of this clock
+			8'h78: io_dat <= { 4'd0, esp_rx_count, 13'd0, esp_overrun, esp_tx_busy, esp_rx_count != 12'd0 };
 			8'h6c: io_dat <= ser_cfg;
 			8'h90: io_dat <= { 16'd0, frames };
 			default: io_dat <= 32'd0;

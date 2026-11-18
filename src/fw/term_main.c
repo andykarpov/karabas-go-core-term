@@ -8,6 +8,12 @@
 #include "mmio_hw.h"
 #include "kbd.h"
 #include "vtfeed.h"
+#include <stdio.h>
+#include <string.h>
+#include "esp.h"
+#include "telnet.h"
+#include "charset.h"
+#include "ui.h"
 
 static VTerm *vt;
 static tscreen ts;
@@ -19,10 +25,99 @@ static void ser_putc(uint8_t c) {
     IO_SER_TX = c;
 }
 
-/* libvterm -> the host (keys, replies to queries) */
+/* ------------------------------------------------------------------ the session (docs/PLAN.md Ф2) */
+
+static struct conn cur;               /* the session: USB serial, telnet or raw TCP */
+static int sess_on;                   /* a session is up (USB: always once chosen; TCP: connected) */
+
+static size_t esp_tx(const uint8_t *p, size_t n) { return esp_send(p, n); }
+
+/* libvterm -> the host (keys, replies to queries), in the charset of the session */
 static void out_cb(const char *s, size_t len, void *user) {
     (void)user;
-    for (size_t i = 0; i < len; i++) ser_putc((uint8_t)s[i]);
+    if (ui_active() || !sess_on) return;
+    uint8_t b[256];
+    while (len) {
+        size_t k = len > sizeof b ? sizeof b : len;
+        size_t m = charset_out(cur.cs, (const uint8_t *)s, k, b);
+        if (cur.proto == P_USB) for (size_t i = 0; i < m; i++) ser_putc(b[i]);
+        else if (cur.proto == P_TELNET) telnet_out(b, m);
+        else esp_send(b, m);
+        s += k; len -= k;
+    }
+}
+
+/* bytes of the host -> the screen; held while the connection screen is open */
+#define HOLD 16384
+static uint8_t hold[HOLD];
+static size_t hold_n;
+
+static void to_screen(const uint8_t *p, size_t n) {
+    uint8_t u[1024];
+    while (n) {
+        size_t k = n > 256 ? 256 : n;
+        size_t m = charset_in(cur.cs, p, k, u);
+        vtfeed(vt, (const char *)u, m);
+        p += k; n -= k;
+    }
+}
+
+static void host_bytes(const uint8_t *p, size_t n) {
+    if (ui_active()) { while (n-- && hold_n < HOLD) hold[hold_n++] = *p++; return; }
+    to_screen(p, n);
+}
+
+static void on_tcp(const uint8_t *p, size_t n) {
+    if (cur.proto == P_TELNET) {
+        uint8_t d[256];
+        size_t m = telnet_in(p, n, d);
+        host_bytes(d, m);
+    } else host_bytes(p, n);
+}
+
+static void back_to_session(void) {
+    ui_close(vt);
+    if (hold_n) { to_screen(hold, hold_n); hold_n = 0; }
+}
+
+static void start(const struct conn *c) {
+    if (sess_on && cur.proto != P_USB) esp_close();
+    cur = *c;
+    sess_on = 0;
+    hold_n = 0;
+    ui_remember(c);
+    if (c->proto == P_USB) {
+        sess_on = 1;
+        ui_session(&cur, 1);
+        back_to_session();
+        return;
+    }
+    if (!esp_ready()) { ui_status(vt, "The ESP8266 does not answer"); return; }
+    if (cur.proto == P_TELNET) telnet_reset(TS_COLS, TS_ROWS, esp_tx);
+    char s[128];
+    snprintf(s, sizeof s, "Connecting to %s:%d ...", c->host, c->port);
+    ui_status(vt, s);
+    esp_connect(c->host, c->port);
+}
+
+static int key_hook(VTermKey key, uint32_t ch, VTermModifier mod, int gui) {
+    if (gui && key == VTERM_KEY_ESCAPE) { ui_open(vt); return 1; }
+    if (gui && (ch == 'd' || ch == 'D')) {
+        if (sess_on && cur.proto != P_USB) esp_close();
+        sess_on = 0;
+        ui_session(&cur, 0);
+        ui_open(vt);
+        ui_status(vt, "Disconnected");
+        return 1;
+    }
+    if (!ui_active()) return 0;
+    struct conn c;
+    switch (ui_key(vt, key, ch, mod, &c)) {
+    case UI_CONNECT: start(&c); break;
+    case UI_BACK: if (sess_on) back_to_session(); break;
+    default: break;
+    }
+    return 1;
 }
 
 /* the xterm 256-colour palette */
@@ -70,6 +165,46 @@ static void print_hash(void) {
 /* start-up stages on the debug port (DEBUG_ADDR low byte: kg_board.py log shows each change) */
 #define STAGE(c) (IO_DBG = (c))
 
+/* the state of the module and of the TCP session -> the connection screen */
+static void poll_net(void) {
+    static int was_ready, last_state = -1;
+    static uint32_t ip_t;
+    if (esp_ready() && !was_ready) {
+        was_ready = 1;
+        ui_status(vt, esp_ip()[0] ? "Ready" : "Ready: Wi-Fi has no IP (Setup Wi-Fi in the boot core)");
+        /* the sims (src/sim/run_f2.py) set SW bit 30: telnet to 127.0.0.1:2323 at once (0 on the board:
+           the core has two switch bytes) */
+        if (IO_SW >> 30 & 1) { static const struct conn t = { P_TELNET, "127.0.0.1", 2323, 0 }; start(&t); }
+    }
+    ui_wifi(vt, esp_ip());
+    if (esp_ready() && !esp_ip()[0] && (int32_t)(IO_MS - ip_t) > 5000) { ip_t = IO_MS; esp_refresh_ip(); }
+    int s = esp_state();
+    if (s == last_state) return;
+    int prev = last_state;
+    last_state = s;
+    if (cur.proto == P_USB) return;
+    if (s == ESP_CONNECTED) {
+        sess_on = 1;
+        ui_session(&cur, 1);
+        ui_status(vt, "Connected");
+        ui_close(vt);
+        static const char clr[] = "\x1b[0m\x1b[2J\x1b[H";         /* a new session: a clean screen */
+        vterm_input_write(vt, clr, sizeof clr - 1);
+        back_to_session();
+    } else if (s == ESP_IDLE && (prev == ESP_CONNECTED || prev == ESP_CONNECTING)) {
+        int was = sess_on;
+        sess_on = 0;
+        ui_session(&cur, 0);
+        static const char closed[] = "\r\n\x1b[0;7m[connection closed]\x1b[0m\r\n";
+        if (was) vtfeed(vt, closed, sizeof closed - 1);
+        ui_open(vt);
+        char m[96];
+        snprintf(m, sizeof m, "%s%s", was ? "Disconnected" : "Failed", esp_error()[0] ? ": " : "");
+        if (esp_error()[0]) strncat(m, esp_error(), sizeof m - strlen(m) - 1);
+        ui_status(vt, m);
+    }
+}
+
 int main(void) {
     STAGE('a');
     vt = vterm_new(TS_ROWS, TS_COLS);
@@ -83,10 +218,16 @@ int main(void) {
     push_screen();
     STAGE('d');
     IO_SHOW = 1;
-    static const char hello[] = "\x1b[1mterm\x1b[0m: xterm-256color, 128 x 48, USB serial\r\n";
+    static const char hello[] = "\x1b[1mterm\x1b[0m: xterm-256color, 128 x 48\r\n";
     vterm_input_write(vt, hello, sizeof hello - 1);
     push_screen();
     kbd_init(vt);
+    kbd_hook = key_hook;
+    esp_on_data = on_tcp;
+    esp_init();
+    ui_open(vt);
+    ui_status(vt, "Looking for the ESP8266 ...");
+    push_screen();
     STAGE('e');
     char buf[256];
     uint32_t sw_last = IO_SW;
@@ -96,12 +237,11 @@ int main(void) {
         sw_last = sw;
         int n = 0;
         uint32_t r;
-        while (n < (int)sizeof buf && ((r = IO_SER_RX) & 0x100)) buf[n++] = (char)r;
-#ifdef ECHO_TEST
-        /* the link test: every byte back to the host as it came (src/tools/echo_test.py) */
-        for (int i = 0; i < n; i++) ser_putc((uint8_t)buf[i]);
-#endif
-        if (n) vtfeed(vt, buf, n);
+        /* the USB serial port: read only while it is the session and the screen shows it */
+        while (sess_on && cur.proto == P_USB && !ui_active() && n < (int)sizeof buf && ((r = IO_SER_RX) & 0x100)) buf[n++] = (char)r;
+        if (n) to_screen((const uint8_t *)buf, (size_t)n);
+        esp_poll();
+        poll_net();
         kbd_poll(vt);
         push_screen();
     }

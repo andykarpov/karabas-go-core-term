@@ -3,12 +3,15 @@
 // usage: tb_soc <term.bin> <font_full.bin> [--in stream] [--rate clocks per byte (1000)] [--frames N (3)]
 //               [--shot frame file.ppm]... [--start-ms M: the stream starts after M ms (20)]
 //               [--host-out file: the bytes the core sent to the host]
+//               [--esp: the ESP8266 model on the UART pins (esp_model.h); --at-log file: its AT lines]
+//               [--keys F:K,...: at frame F a key press of HID usage K (hex, with mods << 8), released a frame later]
 //               [--hash-frames N: N frames after the stream was fed, SW bit 31 is set (the firmware prints
 //               HASH of the visible cells) and the run stops a frame later]
 // The firmware at SRAM 0, the font at 0x200000 are put in the model (on the board: the loader / SD).
 // Prints the debug console bytes, at the end the frames and the bytes fed.
 #include "Vterm_soc.h"
 #include "verilated.h"
+#include "esp_model.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -46,6 +49,10 @@ int main(int argc, char **argv) {
     if (strcmp(argv[2], "-")) nfont = load(argv[2], 0x200000);
     std::vector<uint8_t> in;
     FILE *host_out = 0;
+    EspModel esp(564);
+    bool use_esp = false;
+    uint32_t sw_init = 0;
+    std::vector<std::pair<int, uint32_t>> keys;
     int rate = 1000, frames_max = 3, start_ms = 20, hash_frames = -1, fed_frame = -1;
     std::vector<std::pair<int, std::string>> shots;
     for (int i = 3; i < argc; i++) {
@@ -54,6 +61,13 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--frames")) frames_max = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--start-ms")) start_ms = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--host-out")) host_out = fopen(argv[++i], "wb");
+        else if (!strcmp(argv[i], "--esp")) use_esp = true;
+        else if (!strcmp(argv[i], "--sw")) sw_init = strtoul(argv[++i], 0, 0);
+        else if (!strcmp(argv[i], "--at-log")) esp.at_log = fopen(argv[++i], "w");
+        else if (!strcmp(argv[i], "--keys")) {
+            char *q = argv[++i];
+            while (*q) { int fr = strtol(q, &q, 10); if (*q == ':') q++; uint32_t kk = strtoul(q, &q, 16); keys.push_back({fr, kk}); if (*q == ',') q++; }
+        }
         else if (!strcmp(argv[i], "--hash-frames")) { hash_frames = atoi(argv[++i]); frames_max = 1000000; }
         else if (!strcmp(argv[i], "--shot")) { int fn = atoi(argv[++i]); shots.push_back({fn, argv[++i]}); }
     }
@@ -61,7 +75,8 @@ int main(int argc, char **argv) {
     Vterm_soc *t = new Vterm_soc;
     t->clk = 0; t->reset = 1; t->ld_kind = 0; t->ld_slot = 0; t->ld_active = 0; t->ld_addr = 0; t->ld_data = 0; t->ld_wr = 0;
     t->kbd = 0; t->kbd_wr = 0; t->ms_x = t->ms_y = t->ms_b = 0; t->ms_wr = 0; t->sw = 0;
-    t->ser_out_data = 0; t->ser_out_wr = 0; t->ser_in_full = 0; t->ser_cfg = 0; t->MD_I = 0;
+    t->ser_out_data = 0; t->ser_out_wr = 0; t->ser_in_full = 0; t->ser_cfg = 0; t->MD_I = 0; t->esp_rxd = 1;
+    t->sw = sw_init;
     uint32_t prev_ma = 0;
     uint64_t k = 0;
     size_t fed = 0;
@@ -104,6 +119,8 @@ int main(int argc, char **argv) {
         if (fed < in.size() && k >= next_feed && t->ser_out_ready) {
             t->ser_out_data = in[fed++]; t->ser_out_wr = 1; next_feed = k + rate;
         }
+        if (use_esp) t->esp_rxd = esp.tick(t->esp_txd, t->esp_cts_n);
+        t->kbd_wr = 0;
         if (t->ser_in_wr) { host_bytes++; if (host_out) fputc(t->ser_in_data, host_out); }
         if (t->dbg_wr) { char c = (char)t->dbg_byte; if (c == '\n') { printf("DBG %s\n", line.c_str()); line.clear(); } else line += c; }
         // video capture (de / hs / vs of the clock after the edge)
@@ -117,6 +134,10 @@ int main(int argc, char **argv) {
             printf("FRAME %d lines %d cpu_run %d fed %zu host %zu\n", frame, y, t->cpu_run, fed, host_bytes);
             fflush(stdout);
             frame++; y = 0; x = 0;
+            for (auto &kp : keys) {
+                if (kp.first == frame) { t->kbd = (uint64_t)(kp.second & 0xff) << 8 | (kp.second >> 8 & 0xff); t->kbd_wr = 1; }
+                if (kp.first + 1 == frame) { t->kbd = 0; t->kbd_wr = 1; }
+            }
             if (hash_frames >= 0) {
                 if (fed == in.size() && fed_frame < 0) fed_frame = frame;
                 if (fed_frame >= 0 && frame == fed_frame + hash_frames) t->sw = 0x80000000u;
@@ -130,6 +151,7 @@ int main(int argc, char **argv) {
     }
     if (!line.empty()) printf("DBG %s\n", line.c_str());
     if (host_out) fclose(host_out);
+    if (esp.at_log) fclose(esp.at_log);
     if (getenv("TB_DUMP")) { FILE *f = fopen(getenv("TB_DUMP"), "wb"); fwrite(sram.data(), 1, sram.size(), f); fclose(f); }
     delete t;
     return 0;

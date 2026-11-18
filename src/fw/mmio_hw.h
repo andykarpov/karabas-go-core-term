@@ -20,6 +20,9 @@
 #define IO_SER_TX    IO(0x64)   /* W: a byte to the host */
 #define IO_SER_STAT  IO(0x68)   /* bit 0 rx waiting, bit 1 tx full */
 #define IO_SER_CFG   IO(0x6c)
+#define IO_ESP_RX    IO(0x70)   /* R: bit 8 = a byte (taken), 7..0: the ESP8266 UART */
+#define IO_ESP_TX    IO(0x74)   /* W: a byte to the module */
+#define IO_ESP_STAT  IO(0x78)   /* bit 0 rx waiting, bit 1 tx busy, bit 2 rx overrun, 27..16 rx count */
 #define IO_DEF_FG    IO(0x80)
 #define IO_DEF_BG    IO(0x84)
 #define IO_CURSOR    IO(0x88)   /* { blink 24, shape 17..16, on 15, y 13..8, x 6..0 } */
