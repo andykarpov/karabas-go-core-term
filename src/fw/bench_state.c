@@ -5,8 +5,11 @@
 #include <stdlib.h>
 #include "vterm.h"
 #include "tscreen.h"
+#include "vtfeed.h"
 
+#ifndef CHUNK
 #define CHUNK 256
+#endif
 #ifdef HOST
 #define MARK(v) ((void)0)
 #else
@@ -44,7 +47,7 @@ int main(int argc, char **argv) {
     MARK(1);
     for (uint32_t i = 0; i < n; i += CHUNK) {
         uint32_t len = n - i < CHUNK ? n - i : CHUNK;
-        vterm_input_write(vt, (const char *)in + i, len);
+        vtfeed(vt, (const char *)in + i, len);
     }
     MARK(2);
     uint32_t h = 2166136261u;

@@ -1,6 +1,7 @@
 /* term screen layer on VTermState (see tscreen.h). */
 #include <string.h>
 #include "tscreen.h"
+#include "compose.h"
 
 static uint16_t pack_color(const VTermColor *c, int is_bg) {
     if ((is_bg && VTERM_COLOR_IS_DEFAULT_BG(c)) || (!is_bg && VTERM_COLOR_IS_DEFAULT_FG(c))) return 0x100;
@@ -23,7 +24,7 @@ static void erase_cells(tscreen *s, int row, int c0, int c1) {
 static int cb_putglyph(VTermGlyphInfo *info, VTermPos pos, void *user) {
     tscreen *s = user;
     ts_cell *c = tscreen_cell(s, pos.row, pos.col);
-    c->w0 = (info->chars[0] & 0x1fffff) | (info->width == 2 ? 1u << 21 : 0) | s->pen_attr;
+    c->w0 = (compose(info->chars, VTERM_MAX_CHARS_PER_CELL) & 0x1fffff) | (info->width == 2 ? 1u << 21 : 0) | s->pen_attr;
     c->w1 = s->pen_col;
     if (info->width == 2 && pos.col + 1 < TS_COLS) { c[1].w0 = TS_CONT; c[1].w1 = 0; }
     s->n_put++;
@@ -34,7 +35,7 @@ static int cb_movecursor(VTermPos pos, VTermPos oldpos, int visible, void *user)
     tscreen *s = user;
     (void)oldpos;
     s->cursor = pos;
-    s->cursor_visible = visible;
+    (void)visible;                 /* the visibility comes with VTERM_PROP_CURSORVISIBLE */
     return 1;
 }
 
@@ -105,7 +106,9 @@ static int cb_settermprop(VTermProp p, VTermValue *v, void *user) {
             memcpy(s->row, s->prim_row, sizeof s->row);
         }
         s->altscreen = v->boolean;
-    }
+    } else if (p == VTERM_PROP_CURSORVISIBLE) s->cursor_visible = v->boolean;
+    else if (p == VTERM_PROP_CURSORBLINK) s->cursor_blink = v->boolean;
+    else if (p == VTERM_PROP_CURSORSHAPE) s->cursor_shape = v->number;
     return 1;
 }
 
@@ -136,6 +139,9 @@ void tscreen_init(tscreen *s, VTermState *st, ts_cell *ring, ts_cell *alt) {
     s->ring = ring;
     s->alt = alt;
     g_state = st;
+    s->cursor_visible = 1;
+    s->cursor_blink = 1;
+    s->cursor_shape = VTERM_PROP_CURSORSHAPE_BLOCK;
     for (int y = 0; y < TS_ROWS; y++) s->row[y] = (uint16_t)y;
     vterm_state_set_callbacks(st, &cbs, s);
     vterm_state_reset(st, 1);

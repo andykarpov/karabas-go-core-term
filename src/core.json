@@ -1,0 +1,103 @@
+{
+    "id": "term",
+    "name": "Terminal",
+    "build": "26111901",
+    "visible": true,
+    "type": "osd",
+    "order": 31,
+    "eeprom_bank": 255,
+    "rtc_mode": 0,
+    "roms": [
+        {
+            "filename": "roms/term.bin",
+            "address": 0
+        },
+        {
+            "filename": "roms/base_0000.bin",
+            "address": 2097152
+        },
+        {
+            "filename": "roms/base_0370.bin",
+            "address": 2125312
+        },
+        {
+            "filename": "roms/base_0400.bin",
+            "address": 2129920
+        },
+        {
+            "filename": "roms/base_2000.bin",
+            "address": 2359296
+        },
+        {
+            "filename": "roms/base_20a0.bin",
+            "address": 2364416
+        },
+        {
+            "filename": "roms/base_2100.bin",
+            "address": 2367488
+        },
+        {
+            "filename": "roms/base_2190.bin",
+            "address": 2372096
+        },
+        {
+            "filename": "roms/base_2200.bin",
+            "address": 2375680
+        },
+        {
+            "filename": "roms/base_2300.bin",
+            "address": 2383872
+        },
+        {
+            "filename": "roms/base_2500.bin",
+            "address": 2400256
+        },
+        {
+            "filename": "roms/base_25a0.bin",
+            "address": 2405376
+        },
+        {
+            "filename": "roms/base_2600.bin",
+            "address": 2408448
+        },
+        {
+            "filename": "roms/base_2700.bin",
+            "address": 2416640
+        },
+        {
+            "filename": "roms/base_2800.bin",
+            "address": 2424832
+        },
+        {
+            "filename": "roms/base_fffd.bin",
+            "address": 4194208
+        }
+    ],
+    "boards": {
+        "minig": {
+            "link": 2,
+            "build": "26111901",
+            "bitstream": "karabas_minig.bin"
+        }
+    },
+    "osd": [
+        {
+            "type": "FL",
+            "name": "Font",
+            "slot": 0,
+            "extensions": ".bin",
+            "dir": "/term",
+            "hotkey": "Menu+F1",
+            "autoload": true,
+            "file": "font.bin"
+        },
+        {
+            "type": "-"
+        },
+        {
+            "type": "T",
+            "name": "Reset",
+            "index": 1
+        }
+    ]
+}

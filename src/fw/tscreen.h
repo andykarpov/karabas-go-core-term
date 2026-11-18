@@ -35,7 +35,9 @@ typedef struct {
     int altscreen;
     uint32_t pen_attr, pen_col;    /* the current pen, packed */
     VTermPos cursor;
-    int cursor_visible;
+    int cursor_visible;            /* movecursor / VTERM_PROP_CURSORVISIBLE */
+    int cursor_blink;              /* VTERM_PROP_CURSORBLINK */
+    int cursor_shape;              /* VTERM_PROP_CURSORSHAPE: 1 block, 2 underline, 3 bar (left) */
     uint32_t n_put, n_scroll, n_rot, n_move, n_erase;
 } tscreen;
 

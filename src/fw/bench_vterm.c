@@ -9,6 +9,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include "vterm.h"
+#include "vtfeed.h"
+#include "compose.h"
 
 #ifndef ROWS
 #define ROWS 48
@@ -16,7 +18,9 @@
 #ifndef COLS
 #define COLS 128
 #endif
+#ifndef CHUNK
 #define CHUNK 256
+#endif
 
 #ifdef HOST
 #define MARK(v) ((void)0)
@@ -50,7 +54,7 @@ static int on_damage(VTermRect r, void *user) {
                          c.attrs.reverse << 5 | c.attrs.conceal << 6 | c.attrs.strike << 7;
             cell_t *d = &vram[y * COLS + x];
             if (c.chars[0] == (uint32_t)-1) { d->w0 = 0x1fffff; d->w1 = 0; n_cells++; continue; } /* right half of a wide glyph */
-            d->w0 = (c.chars[0] & 0x1fffff) | (c.width == 2 ? 1u << 21 : 0) | a << 22;
+            d->w0 = (compose(c.chars, VTERM_MAX_CHARS_PER_CELL) & 0x1fffff) | (c.width == 2 ? 1u << 21 : 0) | a << 22;
             d->w1 = pack_color(&c.fg, 0) | (uint32_t)pack_color(&c.bg, 1) << 16;
             n_cells++;
         }
@@ -102,7 +106,7 @@ int main(int argc, char **argv) {
     MARK(1); /* init done */
     for (uint32_t i = 0; i < n; i += CHUNK) {
         uint32_t len = n - i < CHUNK ? n - i : CHUNK;
-        vterm_input_write(vt, (const char *)in + i, len);
+        vtfeed(vt, (const char *)in + i, len);
         vterm_screen_flush_damage(scr);
     }
     MARK(2); /* the whole stream */

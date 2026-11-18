@@ -36,15 +36,15 @@ $(B)/vtsrc/.stamp: $(ENCINC) | $(B)
 VTOBJ := $(addprefix $(B)/vt_,$(addsuffix .o,$(VTSRC)))
 $(B)/vt_%.o: $(B)/vtsrc/.stamp
 	$(CROSS)gcc $(CFLAGS) -c $(B)/vtsrc/$*.c -o $@
-$(B)/%.o: %.c mmio.h | $(B)
+$(B)/%.o: %.c mmio.h compose_tab.h | $(B)
 	$(CROSS)gcc $(CFLAGS) -c $< -o $@
 $(B)/crt0.o: crt0.S | $(B)
 	$(CROSS)gcc $(ABI) -c $< -o $@
-$(B)/bench_vterm.elf: $(B)/crt0.o $(B)/bench_vterm.o $(B)/syscalls.o $(VTOBJ) link.ld
-	$(CROSS)gcc $(LDFLAGS) -T link.ld -Wl,-Map,$(B)/bench_vterm.map -o $@ $(B)/crt0.o $(B)/bench_vterm.o $(B)/syscalls.o $(VTOBJ)
+$(B)/bench_vterm.elf: $(B)/crt0.o $(B)/bench_vterm.o $(B)/vtfeed.o $(B)/compose.o $(B)/syscalls.o $(VTOBJ) link.ld
+	$(CROSS)gcc $(LDFLAGS) -T link.ld -Wl,-Map,$(B)/bench_vterm.map -o $@ $(B)/crt0.o $(B)/bench_vterm.o $(B)/vtfeed.o $(B)/compose.o $(B)/syscalls.o $(VTOBJ)
 	$(CROSS)size $@
-$(B)/bench_state.elf: $(B)/crt0.o $(B)/bench_state.o $(B)/tscreen.o $(B)/syscalls.o $(VTOBJ) link.ld
-	$(CROSS)gcc $(LDFLAGS) -T link.ld -Wl,-Map,$(B)/bench_state.map -o $@ $(B)/crt0.o $(B)/bench_state.o $(B)/tscreen.o $(B)/syscalls.o $(VTOBJ)
+$(B)/bench_state.elf: $(B)/crt0.o $(B)/bench_state.o $(B)/tscreen.o $(B)/vtfeed.o $(B)/compose.o $(B)/syscalls.o $(VTOBJ) link.ld
+	$(CROSS)gcc $(LDFLAGS) -T link.ld -Wl,-Map,$(B)/bench_state.map -o $@ $(B)/crt0.o $(B)/bench_state.o $(B)/tscreen.o $(B)/vtfeed.o $(B)/compose.o $(B)/syscalls.o $(VTOBJ)
 	$(CROSS)size $@
 $(B)/bench_state.o $(B)/tscreen.o: tscreen.h
 $(B)/mc_%.o: $(MC)/%.c | $(B)
@@ -59,16 +59,43 @@ $(B)/bench_crypto.elf: $(B)/crt0.o $(B)/bench_crypto.o $(B)/mc_monocypher.o $(B)
 $(B)/%.bin: $(B)/%.elf
 	$(CROSS)objcopy -O binary $< $@
 
-$(BH)/bench_vterm: bench_vterm.c $(B)/vtsrc/.stamp | $(BH)
-	cc -O2 -DHOST -std=c99 -w -I$(VT)/include -o $@ bench_vterm.c $(addprefix $(B)/vtsrc/,$(addsuffix .c,$(VTSRC)))
+$(BH)/bench_vterm: bench_vterm.c vtfeed.c vtfeed.h compose.c compose_tab.h $(B)/vtsrc/.stamp | $(BH)
+	cc -O2 -DHOST -std=c99 -w -I$(VT)/include -I. -o $@ bench_vterm.c vtfeed.c compose.c $(addprefix $(B)/vtsrc/,$(addsuffix .c,$(VTSRC)))
 
-$(BH)/bench_state: bench_state.c tscreen.c tscreen.h $(B)/vtsrc/.stamp | $(BH)
-	cc -O2 -DHOST -std=c99 -w -I$(VT)/include -I. -o $@ bench_state.c tscreen.c $(addprefix $(B)/vtsrc/,$(addsuffix .c,$(VTSRC)))
+$(BH)/bench_state: bench_state.c tscreen.c tscreen.h vtfeed.c vtfeed.h compose.c compose_tab.h $(B)/vtsrc/.stamp | $(BH)
+	cc -O2 -DHOST -std=c99 -w -I$(VT)/include -I. -o $@ bench_state.c tscreen.c vtfeed.c compose.c $(addprefix $(B)/vtsrc/,$(addsuffix .c,$(VTSRC)))
 
 $(BH)/bench_crypto: bench_crypto.c | $(BH)
 	cc -O2 -DHOST -w -I$(MC) -I$(MC)/optional -o $@ bench_crypto.c $(MC)/monocypher.c $(MC)/optional/monocypher-ed25519.c
 
+# ------------------------------------------------------------------ the board firmware (roms/term.bin)
+# make hw: build-hw-$(ARCH)$(OPT)/term.bin, program at SRAM 0 (term_soc.v), tscreen ring of 768 rows
+BW      := build-hw-$(ARCH)$(subst -,,$(OPT))
+HWDEFS  := -DTS_RING=768
+HWCFLAGS := -march=$(ARCH)_zicsr -mabi=ilp32 $(OPT) -g -std=c99 -ffunction-sections -fdata-sections -w $(HWDEFS) -I$(VT)/include -I.
+HWOBJ   := $(addprefix $(BW)/,crt0.o term_main.o kbd.o tscreen.o vtfeed.o compose.o syscalls_hw.o) $(addprefix $(BW)/vt_,$(addsuffix .o,$(VTSRC)))
+hw: $(BW)/term.bin
+# the board test firmware (hwtest.c): make hwtest -> build-hw-test/term.bin
+hwtest:
+	$(MAKE) BW=build-hw-test HWTEST=1 build-hw-test/term.bin
+ifeq ($(HWTEST),1)
+HWOBJ   := $(addprefix $(BW)/,crt0.o hwtest.o syscalls_hw.o)
+endif
+$(BW):
+	mkdir -p $@
+$(BW)/vt_%.o: $(B)/vtsrc/.stamp | $(BW)
+	$(CROSS)gcc $(HWCFLAGS) -c $(B)/vtsrc/$*.c -o $@
+$(BW)/%.o: %.c mmio_hw.h tscreen.h kbd.h vtfeed.h | $(BW)
+	$(CROSS)gcc $(HWCFLAGS) -c $< -o $@
+$(BW)/crt0.o: crt0.S | $(BW)
+	$(CROSS)gcc $(ABI) -c $< -o $@
+$(BW)/term.elf: $(HWOBJ) link_hw.ld
+	$(CROSS)gcc $(LDFLAGS) -T link_hw.ld -Wl,-Map,$(BW)/term.map -o $@ $(HWOBJ)
+	$(CROSS)size $@
+$(BW)/term.bin: $(BW)/term.elf
+	$(CROSS)objcopy -O binary $< $@
+
 clean:
 	rm -rf build-*
 
-.PHONY: all clean
+.PHONY: all clean hw hwtest
