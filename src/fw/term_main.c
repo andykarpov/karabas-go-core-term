@@ -7,6 +7,7 @@
 #include "tscreen.h"
 #include "mmio_hw.h"
 #include "kbd.h"
+#include "vtfeed.h"
 
 static VTerm *vt;
 static tscreen ts;
@@ -88,7 +89,7 @@ int main(void) {
         int n = 0;
         uint32_t r;
         while (n < (int)sizeof buf && ((r = IO_SER_RX) & 0x100)) buf[n++] = (char)r;
-        if (n) vterm_input_write(vt, buf, n);
+        if (n) vtfeed(vt, buf, n);
         kbd_poll(vt);
         push_screen();
     }

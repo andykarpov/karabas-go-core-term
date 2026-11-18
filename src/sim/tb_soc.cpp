@@ -41,7 +41,7 @@ int main(int argc, char **argv) {
     }
     fprintf(stderr, "fw %zu bytes, font %zu bytes, stream %zu bytes\n", nfw, nfont, in.size());
     Vterm_soc *t = new Vterm_soc;
-    t->clk = 0; t->reset = 1; t->ld_kind = 0; t->ld_active = 0; t->ld_addr = 0; t->ld_data = 0; t->ld_wr = 0;
+    t->clk = 0; t->reset = 1; t->ld_kind = 0; t->ld_slot = 0; t->ld_active = 0; t->ld_addr = 0; t->ld_data = 0; t->ld_wr = 0;
     t->kbd = 0; t->kbd_wr = 0; t->ms_x = t->ms_y = t->ms_b = 0; t->ms_wr = 0; t->sw = 0;
     t->ser_out_data = 0; t->ser_out_wr = 0; t->ser_in_full = 0; t->ser_cfg = 0; t->MD_I = 0;
     uint32_t prev_ma = 0;

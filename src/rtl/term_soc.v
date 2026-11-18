@@ -25,8 +25,9 @@
      8c W  SHOW (bit 0)              90 R  FRAMES (vsyncs)
      100..1bc W  ROWTAB[(a - 100) / 4] = the row of screen row n: SRAM byte address / 1024 (12 bits)
      400..7fc W  PAL[(a - 400) / 4] = 0x00RRGGBB
- Loader (kg_mcu2 LD_*, the CPU in reset): kind 0 (the ROMs of the .kg) to the SRAM at their address, a byte
- per write (byte select), ld_ready low while one is pending.
+ Loader (kg_mcu2 LD_*, the CPU in reset): kind 0 (the ROMs of the .kg: the program, the base glyphs) to the
+ SRAM at their address; kind 2 slot 0 (the Font item: Unifont font_full.bin, 2 MB) to 0x200000 + its
+ address. A byte per write (byte select), ld_ready low while one is pending.
 */
 module term_soc #(
 	parameter MS_DIV = 17'd65000,     // clocks per millisecond
@@ -38,6 +39,7 @@ module term_soc #(
 
 	// loader (kg_mcu2)
 	input wire [1:0] ld_kind,
+	input wire [7:0] ld_slot,
 	input wire ld_active,
 	input wire [31:0] ld_addr,
 	input wire [7:0] ld_data,
@@ -356,6 +358,10 @@ always @(posedge clk) begin
 		ld_pend <= 1'b1;
 		ld_d <= ld_data;
 		ld_a <= ld_addr[21:0];
+	end else if (ld_wr && !ld_pend && ld_kind == 2'd2 && ld_slot == 8'd0 && ld_addr[31:21] == 11'd0) begin
+		ld_pend <= 1'b1;
+		ld_d <= ld_data;
+		ld_a <= { 1'b1, ld_addr[20:0] };          // 0x200000 + the address in the file
 	end
 	if (own == O_LD && sr_ack) ld_pend <= 1'b0;
 end

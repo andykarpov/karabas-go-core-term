@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "vterm.h"
+#include "vtfeed.h"
 
 #ifndef ROWS
 #define ROWS 48
@@ -16,7 +17,9 @@
 #ifndef COLS
 #define COLS 128
 #endif
+#ifndef CHUNK
 #define CHUNK 256
+#endif
 
 #ifdef HOST
 #define MARK(v) ((void)0)
@@ -102,7 +105,7 @@ int main(int argc, char **argv) {
     MARK(1); /* init done */
     for (uint32_t i = 0; i < n; i += CHUNK) {
         uint32_t len = n - i < CHUNK ? n - i : CHUNK;
-        vterm_input_write(vt, (const char *)in + i, len);
+        vtfeed(vt, (const char *)in + i, len);
         vterm_screen_flush_damage(scr);
     }
     MARK(2); /* the whole stream */
