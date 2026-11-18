@@ -2,6 +2,7 @@
 // MD_I after edge k = the halfword at the MA of edge k-1; a write lane while /WE is low).
 // usage: tb_soc <term.bin> <font_full.bin> [--in stream] [--rate clocks per byte (1000)] [--frames N (3)]
 //               [--shot frame file.ppm]... [--start-ms M: the stream starts after M ms (20)]
+//               [--host-out file: the bytes the core sent to the host]
 //               [--hash-frames N: N frames after the stream was fed, SW bit 31 is set (the firmware prints
 //               HASH of the visible cells) and the run stops a frame later]
 // The firmware at SRAM 0, the font at 0x200000 are put in the model (on the board: the loader / SD).
@@ -44,6 +45,7 @@ int main(int argc, char **argv) {
     } else nfw = load(argv[1], 0);
     if (strcmp(argv[2], "-")) nfont = load(argv[2], 0x200000);
     std::vector<uint8_t> in;
+    FILE *host_out = 0;
     int rate = 1000, frames_max = 3, start_ms = 20, hash_frames = -1, fed_frame = -1;
     std::vector<std::pair<int, std::string>> shots;
     for (int i = 3; i < argc; i++) {
@@ -51,6 +53,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--rate")) rate = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--frames")) frames_max = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--start-ms")) start_ms = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--host-out")) host_out = fopen(argv[++i], "wb");
         else if (!strcmp(argv[i], "--hash-frames")) { hash_frames = atoi(argv[++i]); frames_max = 1000000; }
         else if (!strcmp(argv[i], "--shot")) { int fn = atoi(argv[++i]); shots.push_back({fn, argv[++i]}); }
     }
@@ -101,7 +104,7 @@ int main(int argc, char **argv) {
         if (fed < in.size() && k >= next_feed && t->ser_out_ready) {
             t->ser_out_data = in[fed++]; t->ser_out_wr = 1; next_feed = k + rate;
         }
-        if (t->ser_in_wr) host_bytes++;
+        if (t->ser_in_wr) { host_bytes++; if (host_out) fputc(t->ser_in_data, host_out); }
         if (t->dbg_wr) { char c = (char)t->dbg_byte; if (c == '\n') { printf("DBG %s\n", line.c_str()); line.clear(); } else line += c; }
         // video capture (de / hs / vs of the clock after the edge)
         if (t->de) { if (x < 1024 && y < 768) { uint8_t *p = &img[(y * 1024 + x) * 3]; p[0] = t->rgb >> 16; p[1] = t->rgb >> 8; p[2] = t->rgb; } x++; }
@@ -126,6 +129,7 @@ int main(int argc, char **argv) {
         if (t->dbg_exit & 0x100) { printf("EXIT %d\n", t->dbg_exit & 0xff); break; }
     }
     if (!line.empty()) printf("DBG %s\n", line.c_str());
+    if (host_out) fclose(host_out);
     if (getenv("TB_DUMP")) { FILE *f = fopen(getenv("TB_DUMP"), "wb"); fwrite(sram.data(), 1, sram.size(), f); fclose(f); }
     delete t;
     return 0;

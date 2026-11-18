@@ -244,6 +244,7 @@ reg signed [11:0] ms_dx = 12'sd0, ms_dy = 12'sd0;
 reg [7:0] ms_btn = 8'd0;
 reg io_ack = 1'b0;
 reg io_wait = 1'b0;                          // SER_RX: one clock for rx_q
+reg rx_av = 1'b0;                            // SER_RX: a byte was waiting in the clock rx_q was read
 reg [31:0] io_dat = 32'd0;
 wire [11:0] io_off = { d_adr[9:0], 2'b00 };
 reg [31:0] us = 32'd0, tcmp = 32'd0;
@@ -320,6 +321,7 @@ always @(posedge clk) begin
 		endcase
 	end else if (io_req && io_off[11:8] == 4'h0 && io_off[7:0] == 8'h60 && !io_wait) begin
 		io_wait <= 1'b1;                             // rx_q = rx_mem[rx_rp] in the next clock
+		rx_av <= rx_n != 9'd0;                       // taken with rx_q: a byte written now is for the next read
 	end else if (io_req) begin
 		io_ack <= 1'b1;
 		io_wait <= 1'b0;
@@ -342,7 +344,7 @@ always @(posedge clk) begin
 			8'h40: io_dat <= us;
 			8'h50: io_dat <= sw;
 			8'h60: begin
-				if (rx_n != 9'd0) begin
+				if (rx_av) begin
 					io_dat <= { 23'd0, 1'b1, rx_q };
 					rx_rp <= rx_rp + 9'd1;
 				end else

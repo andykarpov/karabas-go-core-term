@@ -75,6 +75,12 @@ HWDEFS  := -DTS_RING=768
 HWCFLAGS := -march=$(ARCH)_zicsr -mabi=ilp32 $(OPT) -g -std=c99 -ffunction-sections -fdata-sections -w $(HWDEFS) -I$(VT)/include -I.
 HWOBJ   := $(addprefix $(BW)/,crt0.o term_main.o kbd.o tscreen.o vtfeed.o syscalls_hw.o) $(addprefix $(BW)/vt_,$(addsuffix .o,$(VTSRC)))
 hw: $(BW)/term.bin
+# the board test firmware (hwtest.c): make hwtest -> build-hw-test/term.bin
+hwtest:
+	$(MAKE) BW=build-hw-test HWTEST=1 build-hw-test/term.bin
+ifeq ($(HWTEST),1)
+HWOBJ   := $(addprefix $(BW)/,crt0.o hwtest.o syscalls_hw.o)
+endif
 $(BW):
 	mkdir -p $@
 $(BW)/vt_%.o: $(B)/vtsrc/.stamp | $(BW)
@@ -92,4 +98,4 @@ $(BW)/term.bin: $(BW)/term.elf
 clean:
 	rm -rf build-*
 
-.PHONY: all clean hw
+.PHONY: all clean hw hwtest

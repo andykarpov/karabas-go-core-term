@@ -97,6 +97,10 @@ int main(void) {
         int n = 0;
         uint32_t r;
         while (n < (int)sizeof buf && ((r = IO_SER_RX) & 0x100)) buf[n++] = (char)r;
+#ifdef ECHO_TEST
+        /* the link test: every byte back to the host as it came (src/tools/echo_test.py) */
+        for (int i = 0; i < n; i++) ser_putc((uint8_t)buf[i]);
+#endif
         if (n) vtfeed(vt, buf, n);
         kbd_poll(vt);
         push_screen();
