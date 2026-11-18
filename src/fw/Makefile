@@ -36,15 +36,15 @@ $(B)/vtsrc/.stamp: $(ENCINC) | $(B)
 VTOBJ := $(addprefix $(B)/vt_,$(addsuffix .o,$(VTSRC)))
 $(B)/vt_%.o: $(B)/vtsrc/.stamp
 	$(CROSS)gcc $(CFLAGS) -c $(B)/vtsrc/$*.c -o $@
-$(B)/%.o: %.c mmio.h | $(B)
+$(B)/%.o: %.c mmio.h compose_tab.h | $(B)
 	$(CROSS)gcc $(CFLAGS) -c $< -o $@
 $(B)/crt0.o: crt0.S | $(B)
 	$(CROSS)gcc $(ABI) -c $< -o $@
-$(B)/bench_vterm.elf: $(B)/crt0.o $(B)/bench_vterm.o $(B)/vtfeed.o $(B)/syscalls.o $(VTOBJ) link.ld
-	$(CROSS)gcc $(LDFLAGS) -T link.ld -Wl,-Map,$(B)/bench_vterm.map -o $@ $(B)/crt0.o $(B)/bench_vterm.o $(B)/vtfeed.o $(B)/syscalls.o $(VTOBJ)
+$(B)/bench_vterm.elf: $(B)/crt0.o $(B)/bench_vterm.o $(B)/vtfeed.o $(B)/compose.o $(B)/syscalls.o $(VTOBJ) link.ld
+	$(CROSS)gcc $(LDFLAGS) -T link.ld -Wl,-Map,$(B)/bench_vterm.map -o $@ $(B)/crt0.o $(B)/bench_vterm.o $(B)/vtfeed.o $(B)/compose.o $(B)/syscalls.o $(VTOBJ)
 	$(CROSS)size $@
-$(B)/bench_state.elf: $(B)/crt0.o $(B)/bench_state.o $(B)/tscreen.o $(B)/vtfeed.o $(B)/syscalls.o $(VTOBJ) link.ld
-	$(CROSS)gcc $(LDFLAGS) -T link.ld -Wl,-Map,$(B)/bench_state.map -o $@ $(B)/crt0.o $(B)/bench_state.o $(B)/tscreen.o $(B)/vtfeed.o $(B)/syscalls.o $(VTOBJ)
+$(B)/bench_state.elf: $(B)/crt0.o $(B)/bench_state.o $(B)/tscreen.o $(B)/vtfeed.o $(B)/compose.o $(B)/syscalls.o $(VTOBJ) link.ld
+	$(CROSS)gcc $(LDFLAGS) -T link.ld -Wl,-Map,$(B)/bench_state.map -o $@ $(B)/crt0.o $(B)/bench_state.o $(B)/tscreen.o $(B)/vtfeed.o $(B)/compose.o $(B)/syscalls.o $(VTOBJ)
 	$(CROSS)size $@
 $(B)/bench_state.o $(B)/tscreen.o: tscreen.h
 $(B)/mc_%.o: $(MC)/%.c | $(B)
@@ -59,11 +59,11 @@ $(B)/bench_crypto.elf: $(B)/crt0.o $(B)/bench_crypto.o $(B)/mc_monocypher.o $(B)
 $(B)/%.bin: $(B)/%.elf
 	$(CROSS)objcopy -O binary $< $@
 
-$(BH)/bench_vterm: bench_vterm.c vtfeed.c vtfeed.h $(B)/vtsrc/.stamp | $(BH)
-	cc -O2 -DHOST -std=c99 -w -I$(VT)/include -I. -o $@ bench_vterm.c vtfeed.c $(addprefix $(B)/vtsrc/,$(addsuffix .c,$(VTSRC)))
+$(BH)/bench_vterm: bench_vterm.c vtfeed.c vtfeed.h compose.c compose_tab.h $(B)/vtsrc/.stamp | $(BH)
+	cc -O2 -DHOST -std=c99 -w -I$(VT)/include -I. -o $@ bench_vterm.c vtfeed.c compose.c $(addprefix $(B)/vtsrc/,$(addsuffix .c,$(VTSRC)))
 
-$(BH)/bench_state: bench_state.c tscreen.c tscreen.h vtfeed.c vtfeed.h $(B)/vtsrc/.stamp | $(BH)
-	cc -O2 -DHOST -std=c99 -w -I$(VT)/include -I. -o $@ bench_state.c tscreen.c vtfeed.c $(addprefix $(B)/vtsrc/,$(addsuffix .c,$(VTSRC)))
+$(BH)/bench_state: bench_state.c tscreen.c tscreen.h vtfeed.c vtfeed.h compose.c compose_tab.h $(B)/vtsrc/.stamp | $(BH)
+	cc -O2 -DHOST -std=c99 -w -I$(VT)/include -I. -o $@ bench_state.c tscreen.c vtfeed.c compose.c $(addprefix $(B)/vtsrc/,$(addsuffix .c,$(VTSRC)))
 
 $(BH)/bench_crypto: bench_crypto.c | $(BH)
 	cc -O2 -DHOST -w -I$(MC) -I$(MC)/optional -o $@ bench_crypto.c $(MC)/monocypher.c $(MC)/optional/monocypher-ed25519.c
@@ -73,7 +73,7 @@ $(BH)/bench_crypto: bench_crypto.c | $(BH)
 BW      := build-hw-$(ARCH)$(subst -,,$(OPT))
 HWDEFS  := -DTS_RING=768
 HWCFLAGS := -march=$(ARCH)_zicsr -mabi=ilp32 $(OPT) -g -std=c99 -ffunction-sections -fdata-sections -w $(HWDEFS) -I$(VT)/include -I.
-HWOBJ   := $(addprefix $(BW)/,crt0.o term_main.o kbd.o tscreen.o vtfeed.o syscalls_hw.o) $(addprefix $(BW)/vt_,$(addsuffix .o,$(VTSRC)))
+HWOBJ   := $(addprefix $(BW)/,crt0.o term_main.o kbd.o tscreen.o vtfeed.o compose.o syscalls_hw.o) $(addprefix $(BW)/vt_,$(addsuffix .o,$(VTSRC)))
 hw: $(BW)/term.bin
 # the board test firmware (hwtest.c): make hwtest -> build-hw-test/term.bin
 hwtest:

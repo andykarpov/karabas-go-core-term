@@ -88,7 +88,8 @@
             "extensions": ".bin",
             "dir": "/term",
             "hotkey": "Menu+F1",
-            "autoload": true
+            "autoload": true,
+            "file": "font.bin"
         },
         {
             "type": "-"

@@ -17,7 +17,7 @@ for s in "$SD"/*.bin; do
 	head -c 8000 "$s" > $W/$n.bin
 	cat $W/hello.bin $W/$n.bin > $W/h_$n.bin
 	want=$(../fw/build-host/bench_vterm $W/h_$n.bin | awk '{print $NF}')
-	got=$(./obj_soc/tb_soc $FW $FONT --in $W/$n.bin --rate 300 --hash-frames 2 --shot 0 /dev/null 2>/dev/null | sed -n 's/^DBG HASH //p')
+	got=$(./obj_soc/tb_soc $FW $FONT --in $W/$n.bin --rate 300 --hash-frames 2 --shot 0 /dev/null 2>/dev/null | sed -n 's/^DBG.*HASH //p')
 	if [ "$got" = "$want" ]; then echo "$n: $got = oracle"; else echo "$n: $got != oracle $want"; ok=0; fi
 done
 [ $ok = 1 ]
