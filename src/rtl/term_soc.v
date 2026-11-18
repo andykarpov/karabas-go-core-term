@@ -25,7 +25,8 @@
      8c W  SHOW (bit 0)              90 R  FRAMES (vsyncs)
      100..1bc W  ROWTAB[(a - 100) / 4] = the row of screen row n: SRAM byte address / 1024 (12 bits)
      400..7fc W  PAL[(a - 400) / 4] = 0x00RRGGBB
- Loader (kg_mcu2 LD_*, the CPU in reset): kind 0 (the ROMs of the .kg: the program, the base glyphs) to the
+ Loader (kg_mcu2 LD_*, the CPU in reset; the video does not read the SRAM then: link v2 asks LD_READY once
+ per 512-byte DATA packet, then a byte comes every 250 ns, a byte write here takes 5 clocks): kind 0 (the ROMs of the .kg: the program, the base glyphs) to the
  SRAM at their address; kind 2 slot 0 (the Font item: Unifont font_full.bin, 2 MB) to 0x200000 + its
  address. A byte per write (byte select), ld_ready low while one is pending.
 */
@@ -208,6 +209,7 @@ term_video video (
 	.clk(clk),
 	.reset(reset),
 	.show(show & cpu_run),
+	.fetch_en(cpu_run),
 	.vid_pend(vid_pend), .vid_adr(vid_adr), .vid_take(vid_take), .vid_dv(vid_dv), .vid_d(vid_d),
 	.row_we(row_we), .row_wa(row_wa), .row_wd(row_wd),
 	.pal_we(pal_we), .pal_wa(pal_wa), .pal_wd(pal_wd),

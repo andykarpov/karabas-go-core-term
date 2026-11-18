@@ -29,6 +29,8 @@ module term_video (
 	input wire clk,
 	input wire reset,
 	input wire show,                  // 0: black (before the firmware set up the screen)
+	input wire fetch_en,              // 0: no SRAM reads (the loader has the SRAM: link v2 sends a byte
+	                                  // every 250 ns without a handshake, a video run would delay it)
 
 	// the SRAM gather port (term_sram)
 	output reg vid_pend = 1'b0,
@@ -142,13 +144,13 @@ always @(posedge clk) begin
 		a_ret <= 6'd0;
 	end else if (line_start) begin
 		vid_pend <= 1'b0;
-		a_on <= u < V_ACT;
+		a_on <= u < V_ACT && fetch_en;
 		a_row <= u[9:4];
 		a_k <= u[3:0];
 		a_i <= 5'd0;
 		a_base <= rowtab[u[9:4]];
 		b_line <= t;
-		b_st <= (t < V_ACT) ? 3'd5 : 3'd0;
+		b_st <= (t < V_ACT && fetch_en) ? 3'd5 : 3'd0;
 	end else begin
 		// job A: 32 halfwords in order
 		if (a_on) begin

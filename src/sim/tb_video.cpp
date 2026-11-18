@@ -17,7 +17,7 @@ int main(int argc, char **argv) {
     FILE *f = fopen(argv[1], "rb"); if (!f) return 2; size_t r = fread(sram.data(), 1, sram.size(), f); (void)r; fclose(f);
     int frames_max = argc > 4 ? atoi(argv[4]) : 2;
     Vterm_video *t = new Vterm_video;
-    t->clk = 0; t->reset = 1; t->show = 1; t->vid_take = 0; t->vid_dv = 0; t->vid_d = 0;
+    t->clk = 0; t->reset = 1; t->show = 1; t->fetch_en = 1; t->vid_take = 0; t->vid_dv = 0; t->vid_d = 0;
     t->row_we = 0; t->pal_we = 0; t->def_fg = 0xd0d0d0; t->def_bg = 0; t->cur_x = 0; t->cur_y = 0; t->cur_on = 0;
     t->cur_shape = 0; t->cur_blink = 0;
     struct W { int kind; uint32_t a, v; };

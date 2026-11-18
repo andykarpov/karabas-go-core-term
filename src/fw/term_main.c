@@ -67,19 +67,27 @@ static void print_hash(void) {
     for (int i = 0; i < 14; i++) IO_DBG = (uint8_t)line[i];
 }
 
+/* start-up stages on the debug port (DEBUG_ADDR low byte: kg_board.py log shows each change) */
+#define STAGE(c) (IO_DBG = (c))
+
 int main(void) {
+    STAGE('a');
     vt = vterm_new(TS_ROWS, TS_COLS);
+    STAGE('b');
     vterm_set_utf8(vt, 1);
     vterm_output_set_callback(vt, out_cb, NULL);
     tscreen_init(&ts, vterm_obtain_state(vt), (ts_cell *)RING_BASE, (ts_cell *)ALT_BASE);
+    STAGE('c');
     for (int y = 0; y < TS_ROWS; y++) rowtab_shadow[y] = 0xffff;
     palette();
     push_screen();
+    STAGE('d');
     IO_SHOW = 1;
     static const char hello[] = "\x1b[1mterm\x1b[0m: xterm-256color, 128 x 48, USB serial\r\n";
     vterm_input_write(vt, hello, sizeof hello - 1);
     push_screen();
     kbd_init(vt);
+    STAGE('e');
     char buf[256];
     uint32_t sw_last = IO_SW;
     for (;;) {

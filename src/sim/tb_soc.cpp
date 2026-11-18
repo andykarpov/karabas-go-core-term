@@ -27,7 +27,22 @@ static size_t load(const char *path, uint32_t at) {
 int main(int argc, char **argv) {
     Verilated::commandArgs(argc, argv);
     if (argc < 3) { fprintf(stderr, "usage: tb_soc term.bin font_full.bin [--in f] [--rate c] [--frames n] [--shot f file]\n"); return 2; }
-    size_t nfw = load(argv[1], 0), nfont = load(argv[2], 0x200000);
+    // argv[1] ending in .kg: its ROMS go in through the loader port (as the MCU does), argv[2] "-" = no font
+    std::vector<std::pair<uint32_t, std::vector<uint8_t>>> roms;
+    size_t nfw = 0, nfont = 0;
+    if (strstr(argv[1], ".kg")) {
+        FILE *f = fopen(argv[1], "rb"); std::vector<uint8_t> kg; int c; while ((c = fgetc(f)) >= 0) kg.push_back((uint8_t)c); fclose(f);
+        auto u16 = [&](size_t o) { return (uint32_t)kg[o] | kg[o + 1] << 8; };
+        auto u32 = [&](size_t o) { return u16(o) | u16(o + 2) << 16; };
+        for (uint32_t i = 0; i < u16(8); i++) {
+            size_t e = 32 + 16 * i;
+            if (u16(e) != 8) continue;
+            size_t p = u32(e + 4), end = p + u32(e + 8);
+            while (p < end) { uint32_t ln = u32(p) & 0x7fffffff, ad = u32(p + 4); p += 8;
+                roms.push_back({ad, std::vector<uint8_t>(kg.begin() + p, kg.begin() + p + ln)}); p += ln; nfw += ln; }
+        }
+    } else nfw = load(argv[1], 0);
+    if (strcmp(argv[2], "-")) nfont = load(argv[2], 0x200000);
     std::vector<uint8_t> in;
     int rate = 1000, frames_max = 3, start_ms = 20, hash_frames = -1, fed_frame = -1;
     std::vector<std::pair<int, std::string>> shots;
@@ -52,8 +67,28 @@ int main(int argc, char **argv) {
     std::string line;
     uint64_t start_at = (uint64_t)start_ms * 65000, next_feed = start_at;
     size_t host_bytes = 0;
+    size_t ri = 0, rj = 0;
+    int pkt_left = 0;
+    uint64_t ld_next = 0, ld_lost = 0;
+    bool loading = !roms.empty();
+    if (loading) t->ld_active = 1;
     while (frame < frames_max) {
         if (k == 20) t->reset = 0;
+        // the loader as link v2 (kg_l2_load): LD_READY is asked once per 512-byte DATA packet, then a byte
+        // every 16 clocks (250 ns at 65 MHz) without a handshake; a byte given while the core is not ready
+        // is counted as lost
+        t->ld_wr = 0;
+        if (loading && k > 30 && k >= ld_next) {
+            if (ri < roms.size()) {
+                if (pkt_left == 0) { if (t->ld_ready) pkt_left = 512; }
+                if (pkt_left) {
+                    if (!t->ld_ready) ld_lost++;
+                    t->ld_kind = 0; t->ld_addr = roms[ri].first + (uint32_t)rj; t->ld_data = roms[ri].second[rj]; t->ld_wr = 1;
+                    pkt_left--; ld_next = k + 16;
+                    if (++rj == roms[ri].second.size()) { ri++; rj = 0; pkt_left = 0; }
+                }
+            } else { loading = false; t->ld_active = 0; printf("LOADED at clock %llu, bytes lost %llu\n", (unsigned long long)k, (unsigned long long)ld_lost); }
+        }
         t->clk = 1; t->eval();
         // SRAM pins
         uint32_t ma = t->MA & 0x1fffff;
