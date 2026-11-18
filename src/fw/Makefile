@@ -68,7 +68,28 @@ $(BH)/bench_state: bench_state.c tscreen.c tscreen.h $(B)/vtsrc/.stamp | $(BH)
 $(BH)/bench_crypto: bench_crypto.c | $(BH)
 	cc -O2 -DHOST -w -I$(MC) -I$(MC)/optional -o $@ bench_crypto.c $(MC)/monocypher.c $(MC)/optional/monocypher-ed25519.c
 
+# ------------------------------------------------------------------ the board firmware (roms/term.bin)
+# make hw: build-hw-$(ARCH)$(OPT)/term.bin, program at SRAM 0 (term_soc.v), tscreen ring of 768 rows
+BW      := build-hw-$(ARCH)$(subst -,,$(OPT))
+HWDEFS  := -DTS_RING=768
+HWCFLAGS := -march=$(ARCH)_zicsr -mabi=ilp32 $(OPT) -g -std=c99 -ffunction-sections -fdata-sections -w $(HWDEFS) -I$(VT)/include -I.
+HWOBJ   := $(addprefix $(BW)/,crt0.o term_main.o kbd.o tscreen.o syscalls_hw.o) $(addprefix $(BW)/vt_,$(addsuffix .o,$(VTSRC)))
+hw: $(BW)/term.bin
+$(BW):
+	mkdir -p $@
+$(BW)/vt_%.o: $(B)/vtsrc/.stamp | $(BW)
+	$(CROSS)gcc $(HWCFLAGS) -c $(B)/vtsrc/$*.c -o $@
+$(BW)/%.o: %.c mmio_hw.h tscreen.h kbd.h | $(BW)
+	$(CROSS)gcc $(HWCFLAGS) -c $< -o $@
+$(BW)/crt0.o: crt0.S | $(BW)
+	$(CROSS)gcc $(ABI) -c $< -o $@
+$(BW)/term.elf: $(HWOBJ) link_hw.ld
+	$(CROSS)gcc $(LDFLAGS) -T link_hw.ld -Wl,-Map,$(BW)/term.map -o $@ $(HWOBJ)
+	$(CROSS)size $@
+$(BW)/term.bin: $(BW)/term.elf
+	$(CROSS)objcopy -O binary $< $@
+
 clean:
 	rm -rf build-*
 
-.PHONY: all clean
+.PHONY: all clean hw
