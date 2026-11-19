@@ -351,7 +351,8 @@ static void poll_net(void) {
         vterm_input_write(vt, clr, sizeof clr - 1);
         back_to_session();
         if (cur.proto == P_SSH) ssh_start(&sio, cur.host, cur.port, cur.user, TS_COLS, TS_ROWS);
-    } else if (s == ESP_IDLE && (prev == ESP_CONNECTED || prev == ESP_CONNECTING)) {
+    } else if (s == ESP_IDLE && (prev == ESP_CONNECTED || prev == ESP_CONNECTING || (prev == ESP_CLOSING && sess_on))) {
+        /* CLOSING with the session still on: we closed it for ssh.c (the shell exited); F8 clears sess_on first */
         int was = sess_on;
         sess_on = 0;
         ui_session(&cur, 0);

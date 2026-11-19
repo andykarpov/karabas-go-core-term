@@ -62,12 +62,17 @@ const char *esp_error(void) { return err; }
 enum esp_state esp_state(void) { return st; }
 void esp_refresh_ip(void) { want_ip = 1; }
 
+static int connect_after_close;            /* esp_connect() while the old connection is being closed */
+
 int esp_connect(const char *host, int port) {
-    if (st != ESP_IDLE || !ready) return -1;
+    if (!ready) return -1;
+    int closing = want_close || st == ESP_CLOSING;
+    if (st != ESP_IDLE && !closing) return -1;
     snprintf(conn_cmd, sizeof conn_cmd, "AT+CIPSTART=\"TCP\",\"%s\",%d", host, port);
+    err[0] = 0;
+    if (closing) { connect_after_close = 1; return 0; }
     want_connect = 1;
     st = ESP_CONNECTING;
-    err[0] = 0;
     txq_r = txq_w = 0;
     return 0;
 }
@@ -123,7 +128,11 @@ static void on_line(const char *l) {
     case C_SENDDATA:
         if (!strcmp(l, "SEND OK") || fail) cur = C_NONE;
         break;
-    case C_CLOSE: cur = C_NONE; st = ESP_IDLE; break;
+    case C_CLOSE:
+        cur = C_NONE;
+        st = ESP_IDLE;
+        if (connect_after_close) { connect_after_close = 0; want_connect = 1; st = ESP_CONNECTING; txq_r = txq_w = 0; }
+        break;
     default: break;
     }
 }
@@ -175,6 +184,10 @@ void esp_poll(void) {
             if (cur == C_INIT) { command(C_INIT, init_cmds[init_step]); return; }
             if (cur == C_START) { st = ESP_IDLE; strcpy(err, "connection timed out"); }
             if (cur == C_SEND || cur == C_SENDDATA) { strcpy(err, "the module stopped answering"); }
+            if (cur == C_CLOSE) {                     /* no answer to CIPCLOSE: idle anyway */
+                st = ESP_IDLE;
+                if (connect_after_close) { connect_after_close = 0; want_connect = 1; st = ESP_CONNECTING; txq_r = txq_w = 0; }
+            }
             cur = C_NONE;
         }
         return;

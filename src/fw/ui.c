@@ -111,7 +111,7 @@ static void draw(void) {
     }
     /* the SSH key of the user */
     at(44, 2);
-    if (keyfp[0]) { put("\x1b[38;5;250mYour SSH key: ED25519 "); put(keyfp); put("   \x1b[38;5;244mF2 types the public key into the session (for authorized_keys)\x1b[0m"); }
+    if (keyfp[0]) { put("\x1b[38;5;250mYour SSH key: "); put(keyfp); put(" (ED25519)   \x1b[38;5;244mF2: type it into the session\x1b[0m"); }
     else put("\x1b[38;5;244mYour SSH key: made at the first SSH connection\x1b[0m");
     /* help and status */
     at(46, 2);
@@ -167,9 +167,9 @@ enum ui_action ui_key(VTerm *vt, VTermKey key, uint32_t ch, VTermModifier mod, s
     case VTERM_KEY_LEFT: case VTERM_KEY_RIGHT: {
         int d = key == VTERM_KEY_LEFT ? -1 : 1;
         if (focus == F_PROTO) {
-            int was = f.proto;
             f.proto = (f.proto + P_N + d) % P_N;
-            if (f.port == default_port(was) && default_port(f.proto)) f.port = default_port(f.proto);
+            /* a port the user did not type (0, 22, 23) follows the protocol */
+            if ((f.port == 0 || f.port == 22 || f.port == 23) && default_port(f.proto)) f.port = default_port(f.proto);
         }
         if (focus == F_CS) f.cs = (f.cs + charset_count() + d) % charset_count();
         break;

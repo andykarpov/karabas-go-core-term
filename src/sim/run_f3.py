@@ -4,12 +4,13 @@ server (src/tools/ssh_test_server.py) on 127.0.0.1:2224. The save file of the si
 known_hosts entry of the server (made here: a key of the sim only, never on a board), so the firmware logs in by
 publickey without questions (SW bit 29: SSH to 127.0.0.1:2224 as "test"); then "utf8" Enter is typed.
 Checks: the server saw the login and the line, the firmware kept the store (the seed was replaced).
-usage: run_f3.py [frames 150] [key frame 120]"""
+usage: run_f3.py [frames 150] [key frame 120] [exit: also type "exit 0", the end of the session is on the shot]"""
 import os, socket, subprocess, sys, time, base64
 HERE = os.path.dirname(os.path.abspath(__file__))
 W = os.path.join(HERE, 'build', 'f3'); os.makedirs(W, exist_ok=True)
 FR = int(sys.argv[1]) if len(sys.argv) > 1 else 150
 KF = int(sys.argv[2]) if len(sys.argv) > 2 else 120
+EXIT = len(sys.argv) > 3 and sys.argv[3] == 'exit'
 FW = os.path.join(HERE, '..', 'fw')
 T = os.path.join(FW, 'build-host', 'test_ssh')
 import warnings; warnings.simplefilter('ignore')
@@ -50,7 +51,9 @@ try:
         if 'server on' in open(log.name).read(): break
         time.sleep(0.25)
     # keys: u t f 8 Enter (HID usages 0x18 0x17 0x09 0x25 0x28)
-    keys_arg = ','.join(f'{KF + 2 * i}:{u}' for i, u in enumerate(['18', '17', '09', '25', '28']))
+    # then "exit 0" Enter: the shell exits, the server closes the channel and the TCP connection
+    seq = ['18', '17', '09', '25', '28'] + (['08', '1b', '0c', '17', '2c', '27', '28'] if EXIT else [])
+    keys_arg = ','.join(f'{KF + 2 * i}:{u}' for i, u in enumerate(seq))
     t0 = time.time()
     r = subprocess.run([os.path.join(HERE, 'obj_soc', 'tb_soc'), os.path.join(FW, 'build-hw-rv32imO2', 'term.bin'),
                         os.path.join(HERE, 'build', 'font', 'font_full.bin'), '--esp', '--sw', '0x20000000', '--frames', str(FR),
