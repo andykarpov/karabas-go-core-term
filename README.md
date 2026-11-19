@@ -4,8 +4,8 @@
 
 A terminal for the Karabas Go board family (Xilinx Spartan-6 XC6SLX25): a VexRiscv (RV32IM) soft CPU at 65 MHz runs
 the terminal firmware in C ([libvterm](https://www.leonerd.org.uk/code/libvterm/) and our own screen layer), the RTL
-draws the text screen. Telnet and SSH go through the ESP8266 module of the board (its stock AT firmware); the USB
-serial port of the board connects it to a PC.
+draws the text screen. Telnet and SSH go through the ESP8266 module of the board (its stock AT firmware); the core
+serial port of the board (its second USB serial port) connects it to a PC.
 
 | Board | Core file | Video | Bell |
 |---|---|---|---|
@@ -33,7 +33,7 @@ board yet.
     keyboard-interactive; known_hosts and the user key are kept on the SD card;
   - **telnet** through the ESP8266 (terminal type, window size, binary mode);
   - **raw TCP** through the ESP8266;
-  - **USB serial**: the USB port of the board (a getty or a serial console on the PC).
+  - **USB serial**: the core serial port of the board, `-if02` (a getty or a serial console on the PC).
 - **Charsets** of old hosts and BBS: UTF-8, CP437, CP866, KOI8-R, CP1251, ISO-8859-1.
 - **Phonebook** on the SD card: the connections that worked (64), with the protocol, port, user and charset.
 

@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 """Ф1 link test with the echo firmware (fw make hw HWDEFS="-DTS_RING=768 -DECHO_TEST"): sends N lines of
 printable text over the board's USB serial port, the core sends every byte back; prints the first
-differences. usage: echo_test.py [lines 60] [port glob: default the control port ...-if00; the clean port of
-the firmware with two CDCs: /dev/serial/by-id/usb-Karabas_Go_*-if02]"""
+differences. usage: echo_test.py [lines 60] [port glob: default the core serial port
+/dev/serial/by-id/usb-Karabas_Go_*-if02; the control port -if00 has no core UART since fw 2026-11-19]"""
 import os, sys, time
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', '..', 'karabas-go-tools', 'board'))
 import kg_board
 n = int(sys.argv[1]) if len(sys.argv) > 1 else 60
-if len(sys.argv) > 2:
-    kg_board.PORT_GLOB = sys.argv[2]
+kg_board.PORT_GLOB = sys.argv[2] if len(sys.argv) > 2 else '/dev/serial/by-id/usb-Karabas_Go_*-if02'
 data = ''.join(f'line {i:03d} 0123456789 {chr(98 + i % 20) * 30} xyz\r\n' for i in range(n)).encode()
 p = kg_board.Port()
 p.drain()
