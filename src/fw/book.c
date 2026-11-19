@@ -1,37 +1,15 @@
 /* see book.h */
 #include <string.h>
 #include "book.h"
-#include "mmio_hw.h"
+#include "store.h"
 
-#define SD_SECTOR IO(0xc0)
-#define SD_CMD    IO(0xc4)
-#define SD_STAT   IO(0xc8)
-#define SD_SIZE   IO(0xcc)
-#define SD_BKREQ  IO(0xd0)
-#define SD_BUF(i) IO(0x1000 + 4 * (i))
-#define SECTORS   17
+#define SECTORS   17                         /* S_BOOK.. of store.h */
 
 static struct conn book[BOOK_MAX];
-static int n, state;                        /* 0 asked, 1 loaded, 2 no file */
-static uint32_t t0;
+static int n, state;                        /* 0 waiting for the store, 1 loaded, 2 no file */
 
-static int wait_idle(void) {
-    uint32_t t = IO_MS;
-    while (SD_STAT & 1) if ((int32_t)(IO_MS - t) > 2000) return -1;
-    return (SD_STAT & 2) ? -1 : 0;
-}
-static int rd(uint32_t s, uint8_t *b) {
-    SD_SECTOR = s; SD_CMD = 1;
-    if (wait_idle()) return -1;
-    for (int i = 0; i < 512; i++) b[i] = (uint8_t)SD_BUF(i);
-    return 0;
-}
-static int wr(uint32_t s, const uint8_t *b) {
-    if (state != 1) return -1;
-    for (int i = 0; i < 512; i++) SD_BUF(i) = b[i];
-    SD_SECTOR = s; SD_CMD = 2;
-    return wait_idle();
-}
+static int rd(uint32_t s, uint8_t *b) { return store_rd(S_BOOK + s, b); }
+static int wr(uint32_t s, const uint8_t *b) { return state == 1 ? store_wr(S_BOOK + s, b) : -1; }
 
 static void save(void) {
     uint8_t b[512];
@@ -50,6 +28,7 @@ static void save(void) {
             e[1] = (uint8_t)book[i].cs;
             e[2] = (uint8_t)book[i].port; e[3] = (uint8_t)(book[i].port >> 8);
             memcpy(e + 4, book[i].host, sizeof book[i].host);
+            memcpy(e + 68, book[i].user, sizeof book[i].user);
         }
         if (wr((uint32_t)s, b)) return;
         if ((s - 1) * 4 + 4 >= n) break;             /* the rest is old: count says what is valid */
@@ -71,16 +50,18 @@ static void load(void) {
             c->port = e[2] | e[3] << 8;
             memcpy(c->host, e + 4, sizeof c->host);
             c->host[sizeof c->host - 1] = 0;
+            memcpy(c->user, e + 68, sizeof c->user);          /* 0 in the entries of Ф2 */
+            c->user[sizeof c->user - 1] = 0;
             n++;
         }
     }
 }
 
-void book_init(void) { SD_BKREQ = SECTORS; state = 0; t0 = IO_MS; }
+void book_init(void) { state = 0; }
 
 void book_poll(void) {
     if (state != 0) return;
-    if (SD_STAT & 4) {                                   /* mounted */
+    if (store_state() == 1) {                            /* mounted */
         state = 1;
         struct conn mem[BOOK_MAX];
         int m = n;
@@ -88,7 +69,7 @@ void book_poll(void) {
         load();
         for (int i = m - 1; i >= 0; i--) book_put(&mem[i]);
         if (m == 0 && n == 0) save();                    /* a new file gets its header */
-    } else if ((int32_t)(IO_MS - t0) > 10000) state = 2; /* no card / no answer: RAM only */
+    } else if (store_state() == 2) state = 2;            /* no card / no answer: RAM only */
 }
 
 int book_ready(void) { return state == 1; }
@@ -98,7 +79,7 @@ const struct conn *book_get(int i) { return i >= 0 && i < n ? &book[i] : 0; }
 void book_put(const struct conn *c) {
     int i;
     for (i = 0; i < n; i++)
-        if (book[i].proto == c->proto && book[i].port == c->port && !strcmp(book[i].host, c->host)) break;
+        if (book[i].proto == c->proto && book[i].port == c->port && !strcmp(book[i].host, c->host) && !strcmp(book[i].user, c->user)) break;
     if (i == n) { if (n < BOOK_MAX) n++; i = n - 1; }
     memmove(&book[1], &book[0], (size_t)i * sizeof book[0]);
     book[0] = *c;

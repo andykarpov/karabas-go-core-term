@@ -1,7 +1,7 @@
 /* the phonebook of the term core on the SD card: the save file of the core (term_sd.v, the backup RAM
-   request of link v2: /term/font.sav, 17 sectors). Sector 0: "TERMBOOK" + version + count; sectors
-   1..16: 4 entries of 128 bytes each (proto, charset, port, host). Not mounted yet / no card: the list
-   lives in RAM only. */
+   request of link v2: /term/font.sav, sectors 0..16 of store.h). Sector 0: "TERMBOOK" + version + count;
+   sectors 1..16: 4 entries of 128 bytes each (proto, charset, port 2, host 64, user 32 at 68).
+   Not mounted yet / no card: the list lives in RAM only. */
 #pragma once
 #include "ui.h"
 

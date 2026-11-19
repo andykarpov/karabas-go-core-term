@@ -1,19 +1,21 @@
 /* the connection screen of the term core (Ф2): drawn into libvterm on its alternate screen (the session
-   screen stays under it). Scroll Lock opens it (and goes back), Esc goes back to the session, F8 disconnects. */
+   screen stays under it). Scroll Lock opens it (and goes back), Esc goes back to the session, F8 disconnects,
+   F2 types the SSH public key of the user into the session. */
 #pragma once
 #include <stdint.h>
 #include "vterm.h"
 
-enum proto { P_USB, P_TELNET, P_RAW, P_N };
+enum proto { P_USB, P_TELNET, P_RAW, P_SSH, P_N };      /* the numbers are in the phonebook */
 
 struct conn {
     int proto;
     char host[64];
     int port;
     int cs;                 /* charset.h */
+    char user[32];          /* SSH: "" = asked at the login */
 };
 
-enum ui_action { UI_NONE, UI_CONNECT, UI_BACK };
+enum ui_action { UI_NONE, UI_CONNECT, UI_BACK, UI_TYPE_KEY };   /* UI_TYPE_KEY: F2, the SSH public key into the session */
 
 void ui_open(VTerm *vt);
 void ui_close(VTerm *vt);
@@ -25,4 +27,5 @@ void ui_wifi(VTerm *vt, const char *ip);          /* "" = no IP */
 void ui_session(const struct conn *c, int on);    /* the active session (shown at the top) */
 void ui_remember(const struct conn *c);           /* into the phonebook (book.c) */
 void ui_redraw(void);
+void ui_keyfp(const char *fp);                    /* the fingerprint of the SSH key of the user ("" none) */
 const char *ui_proto_name(int p);
