@@ -8,6 +8,8 @@ The shell: prints TERM and the size, then commands (one per line):
   exit N    the shell exits with status N
   anything else is echoed back as "got: ..."
 usage: ssh_test_server.py [--port 2222] [--keydir DIR] [--authorized FILE] [--rekey-bytes N] [--kbi-only] [--log]
+       [--hostkeys LIST]: host key types, a comma list of ssh-ed25519 (default), ecdsa-sha2-nistp256 / 384 / 521,
+       ssh-rsa-2048 / 3072 / 4096 (Ф6)
 """
 import argparse, asyncio, os, sys, warnings
 warnings.simplefilter('ignore')
@@ -22,12 +24,17 @@ ap.add_argument('--rekey-bytes', type=int, default=None)
 ap.add_argument('--kbi-only', action='store_true', help='no "password" method: keyboard-interactive only')
 ap.add_argument('--pw-only', action='store_true', help='no keyboard-interactive: "password" only')
 ap.add_argument('--log', action='store_true')
+ap.add_argument('--hostkeys', default='ssh-ed25519')
 a = ap.parse_args()
 
 os.makedirs(a.keydir, exist_ok=True)
-hk = os.path.join(a.keydir, 'host_ed25519')
-if not os.path.exists(hk):
-    asyncssh.generate_private_key('ssh-ed25519').write_private_key(hk)
+hks = []
+for t in a.hostkeys.split(','):
+    f = os.path.join(a.keydir, 'host_ed25519' if t == 'ssh-ed25519' else 'host_' + t)
+    if not os.path.exists(f):
+        if t.startswith('ssh-rsa-'): asyncssh.generate_private_key('ssh-rsa', key_size=int(t[8:])).write_private_key(f)
+        else: asyncssh.generate_private_key(t).write_private_key(f)
+    hks.append(f)
 
 
 class Server(asyncssh.SSHServer):
@@ -89,7 +96,7 @@ async def shell(process):
 
 
 async def main():
-    opts = dict(server_host_keys=[hk], process_factory=shell,
+    opts = dict(server_host_keys=hks, process_factory=shell,
                 encryption_algs=['chacha20-poly1305@openssh.com'],
                 kex_algs=['curve25519-sha256', 'curve25519-sha256@libssh.org'])
     if a.authorized: opts['authorized_client_keys'] = a.authorized

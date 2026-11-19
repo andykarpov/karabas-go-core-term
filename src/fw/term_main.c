@@ -144,7 +144,7 @@ static void show_ui(struct tab *t) {
 }
 
 /* ------------------------------------------------------------------ SSH */
-static const struct ssh_io sio = { esp_tx, rng_bytes, host_bytes, sshkeys_host, sshkeys_user };
+static const struct ssh_io sio = { esp_tx, rng_bytes, host_bytes, sshkeys_host, sshkeys_user, sshkeys_host_type, 0 };
 
 /* a line for a question of ssh.c: typed on the session screen (no echo for secrets) */
 static void line_byte(struct tab *t, uint8_t c) {
