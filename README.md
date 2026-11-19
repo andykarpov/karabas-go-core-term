@@ -13,7 +13,7 @@ serial port of the board connects it to a PC.
 | Karabas Mini | `term.kg` | HDMI 1024 x 768 | HDMI, analog output (sigma-delta) |
 | Karabas Mini G | `term.kg` | HDMI 1024 x 768 | HDMI, I2S DAC |
 
-Status: checked on Mini G (USB serial, telnet, SSH, charsets, phonebook). The Go and Mini builds have not been run on a
+Status: checked on Mini G (USB serial, telnet, SSH, charsets, phonebook, tabs, the mouse). The Go and Mini builds have not been run on a
 board yet.
 
 ## Features
