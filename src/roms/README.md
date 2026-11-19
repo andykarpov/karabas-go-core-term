@@ -5,4 +5,4 @@
   drawing, blocks, braille, U+FFFD) at SRAM 0x200000 + codepoint * 32, made by `src/tools/mkfont.py` from
   **GNU Unifont 17.0.05** (https://unifoundry.com, GPL-2+ with the GNU font embedding exception; OFL-1.1
   for the font files). The whole font (`font_full.bin`, 2 MB) is a file on the SD card (OSD item Font),
-  not in the repository.
+  in the repository as `sd/term/font.bin` (for `/term/font.bin` on the card).
