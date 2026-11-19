@@ -65,6 +65,11 @@ grep -q 'IDENTIFICATION HAS CHANGED' "$W/changed_key.out" || { echo "FAIL change
 check changed_replace 'got: z' $T 127.0.0.1 2224 test -K "$W/known2" -a replace -a secret -s 'z\r' -s 'exit 0\r'
 # refused new host
 checkfail new_host_no 'verification failed' $T 127.0.0.1 2224 test -a no
+# Ф5: several sessions at once (a tab each): 4 logins, then 2 x 1 MB with rekeys every 64 KB interleaved
+check four_sessions 'got: q' $T 127.0.0.1 2224 test -K "$W/known" -a secret -s 'q\r' -s 'exit 0\r' -n 4
+[ "$(grep -c 'status 0)' "$W/four_sessions.err")" = 4 ] || { echo "FAIL four_sessions: $(grep -c 'status 0)' "$W/four_sessions.err") of 4 exited 0"; FAIL=1; }
+check two_big 'BIG DONE' $T 127.0.0.1 2224 test -K "$W/known" -a secret -s 'big 1000000\r' -s 'exit 0\r' -n 2 -t 60
+[ "$(grep -c 'BIG DONE' "$W/two_big.out")" -ge 2 ] || { echo "FAIL two_big: $(grep -c 'BIG DONE' "$W/two_big.out") of 2 done"; FAIL=1; }
 # many handshakes (the mpint of K: a leading zero / high bit in some of them)
 N=${N_HANDSHAKES:-100}
 bad=0
