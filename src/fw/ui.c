@@ -95,7 +95,7 @@ static void draw(void) {
     /* help and status */
     at(46, 2);
     put("\x1b[38;5;244m\xe2\x86\x91\xe2\x86\x93 field   \xe2\x86\x90\xe2\x86\x92 choice   Enter connect   Esc back   "
-        "Win+Esc this screen   Win+D disconnect\x1b[0m");
+        "Scroll Lock this screen   F8 disconnect\x1b[0m");
     at(48, 1);
     put("\x1b[0;38;5;255;48;5;236m ");
     put(status);

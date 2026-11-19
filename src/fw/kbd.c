@@ -52,6 +52,7 @@ static void press(VTerm *vt, uint8_t k, uint8_t m) {
     case 0x2a: key = VTERM_KEY_BACKSPACE; break;
     case 0x2b: key = VTERM_KEY_TAB; break;
     case 0x39: caps = !caps; return;
+    case 0x47: if (kbd_hook) kbd_hook(VTERM_KEY_NONE, KBD_SCROLL_LOCK, md, (m & 0x88) != 0); return;
     case 0x49: key = VTERM_KEY_INS; break;
     case 0x4a: key = VTERM_KEY_HOME; break;
     case 0x4b: key = VTERM_KEY_PAGEUP; break;

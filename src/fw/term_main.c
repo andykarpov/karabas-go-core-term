@@ -86,7 +86,6 @@ static void start(const struct conn *c) {
     cur = *c;
     sess_on = 0;
     hold_n = 0;
-    ui_remember(c);
     if (c->proto == P_USB) {
         sess_on = 1;
         ui_session(&cur, 1);
@@ -102,8 +101,9 @@ static void start(const struct conn *c) {
 }
 
 static int key_hook(VTermKey key, uint32_t ch, VTermModifier mod, int gui) {
-    if (gui && key == VTERM_KEY_ESCAPE) { ui_open(vt); return 1; }
-    if (gui && (ch == 'd' || ch == 'D')) {
+    (void)gui;                         /* Win = the Menu key of the firmware (Menu+Esc = OSD): not used */
+    if (ch == KBD_SCROLL_LOCK) { if (ui_active() && sess_on) back_to_session(); else ui_open(vt); return 1; }
+    if (ui_active() && key == VTERM_KEY_FUNCTION(8)) {
         if (sess_on && cur.proto != P_USB) esp_close();
         sess_on = 0;
         ui_session(&cur, 0);
@@ -186,6 +186,7 @@ static void poll_net(void) {
     if (cur.proto == P_USB) return;
     if (s == ESP_CONNECTED) {
         sess_on = 1;
+        ui_remember(&cur);                /* into the phonebook: only a connection that worked */
         ui_session(&cur, 1);
         ui_status(vt, "Connected");
         ui_close(vt);

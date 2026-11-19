@@ -1,5 +1,5 @@
 /* the connection screen of the term core (Ф2): drawn into libvterm on its alternate screen (the session
-   screen stays under it). Win+Esc opens it, Esc goes back to the session. */
+   screen stays under it). Scroll Lock opens it (and goes back), Esc goes back to the session, F8 disconnects. */
 #pragma once
 #include <stdint.h>
 #include "vterm.h"
