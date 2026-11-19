@@ -39,6 +39,7 @@ typedef struct {
     int cursor_blink;              /* VTERM_PROP_CURSORBLINK */
     int cursor_shape;              /* VTERM_PROP_CURSORSHAPE: 1 block, 2 underline, 3 bar (left) */
     uint32_t bells;                /* BEL received (a counter) */
+    int mouse;                     /* VTERM_PROP_MOUSE: 0 off, else the mouse tracking mode of the application */
     uint32_t n_put, n_scroll, n_rot, n_move, n_erase;
 } tscreen;
 

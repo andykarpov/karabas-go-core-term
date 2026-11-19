@@ -33,6 +33,9 @@ class Server(asyncssh.SSHServer):
     def connection_made(self, conn):
         if a.log: print('connection', conn.get_extra_info('peername'), file=sys.stderr, flush=True)
 
+    def auth_completed(self):
+        if a.log: print('auth ok', file=sys.stderr, flush=True)
+
     def begin_auth(self, username):
         return True
 
@@ -61,6 +64,7 @@ async def shell(process):
     try:
         while True:
             line = (await process.stdin.readline()).strip()
+            if a.log: print('line:', line, file=sys.stderr, flush=True)
             if line.startswith('big'):
                 n = int(line.split()[1])
                 chunk = ''.join(f'{i:07d} the quick brown fox jumps over the lazy dog 0123456789\r\n' for i in range(64))

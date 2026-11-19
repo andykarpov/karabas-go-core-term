@@ -109,6 +109,7 @@ static int cb_settermprop(VTermProp p, VTermValue *v, void *user) {
     } else if (p == VTERM_PROP_CURSORVISIBLE) s->cursor_visible = v->boolean;
     else if (p == VTERM_PROP_CURSORBLINK) s->cursor_blink = v->boolean;
     else if (p == VTERM_PROP_CURSORSHAPE) s->cursor_shape = v->number;
+    else if (p == VTERM_PROP_MOUSE) s->mouse = v->number;
     return 1;
 }
 

@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include "esp.h"
 #include "mmio_hw.h"
+#include "rng.h"
 
 void (*esp_on_data)(const uint8_t *p, size_t n);
 
@@ -13,7 +14,7 @@ static size_t txq_r, txq_w;
 static size_t txq_n(void) { return txq_w - txq_r; }
 
 static enum esp_state st = ESP_IDLE;
-static char ip[20], err[48];
+static char ip[20], err[96];
 static int ready;
 
 /* the current command */
@@ -83,6 +84,7 @@ size_t esp_send(const uint8_t *p, size_t n) {
 
 /* a whole line came (no CR LF) */
 static void on_line(const char *l) {
+    rng_event(1);                          /* when a line comes: decided by the network */
     if (!strcmp(l, "CLOSED") || !strcmp(l, "0,CLOSED")) {
         if (st == ESP_CONNECTED) strcpy(err, "closed by the remote host");
         st = ESP_IDLE;
