@@ -24,6 +24,8 @@
  so a text row is complete one line before its first line is fetched (B of line 16R reads row R).
  Pixels: the active area is hcount 16..1039 (the syncs shifted with it); the colours and the 8 pixels of
  cell c are made during hcount 8c + 8 .. 8c + 15 (prep, one cell ahead) and shown from 8c + 16.
+ The mouse pointer (docs/PLAN.md Ф5): an arrow of 16 x 16 pixels (black outline, white inside) over the text,
+ its tip at (ptr_x, ptr_y); its masks of a line are taken at hcount 0.
 */
 module term_video (
 	input wire clk,
@@ -53,6 +55,9 @@ module term_video (
 	input wire cur_on,
 	input wire [1:0] cur_shape,       // 0 block, 1 underline, 2 bar
 	input wire cur_blink,
+	input wire ptr_on,
+	input wire [9:0] ptr_x,
+	input wire [9:0] ptr_y,
 	output reg [15:0] frames = 16'd0, // frames shown (vsync count)
 
 	output reg [23:0] rgb = 24'd0,
@@ -340,6 +345,42 @@ always @(posedge clk) begin
 	end
 end
 
+// ------------------------------------------------------------------ the mouse pointer
+
+// the arrow: po = the black outline, pw = the white inside of a row (bit 15 = the left pixel)
+reg [15:0] po, pw;
+wire [9:0] pdy = v - ptr_y;
+always @(*) begin
+	case (pdy[3:0])
+	4'd0: begin po = 16'h8000; pw = 16'h0000; end
+	4'd1: begin po = 16'hc000; pw = 16'h0000; end
+	4'd2: begin po = 16'ha000; pw = 16'h4000; end
+	4'd3: begin po = 16'h9000; pw = 16'h6000; end
+	4'd4: begin po = 16'h8800; pw = 16'h7000; end
+	4'd5: begin po = 16'h8400; pw = 16'h7800; end
+	4'd6: begin po = 16'h8200; pw = 16'h7c00; end
+	4'd7: begin po = 16'h8100; pw = 16'h7e00; end
+	4'd8: begin po = 16'h8080; pw = 16'h7f00; end
+	4'd9: begin po = 16'h8040; pw = 16'h7f80; end
+	4'd10: begin po = 16'h83e0; pw = 16'h7c00; end
+	4'd11: begin po = 16'h9200; pw = 16'h6c00; end
+	4'd12: begin po = 16'ha900; pw = 16'h4600; end
+	4'd13: begin po = 16'hc900; pw = 16'h0600; end
+	4'd14: begin po = 16'h0480; pw = 16'h0300; end
+	default: begin po = 16'h0300; pw = 16'h0000; end
+	endcase
+end
+reg [15:0] l_po = 16'd0, l_pw = 16'd0;   // the masks of this line (0: the pointer is not on it)
+reg [9:0] l_px = 10'd0;
+always @(posedge clk) if (line_start) begin
+	l_po <= (ptr_on && pdy < 10'd16) ? po : 16'd0;
+	l_pw <= (ptr_on && pdy < 10'd16) ? pw : 16'd0;
+	l_px <= ptr_x;
+end
+wire [10:0] pdx = h - H_ACT0 - { 1'b0, l_px };    // the pixel of h (in the active area) from the tip
+reg [1:0] spr = 2'd0;                     // { white, black } of that pixel, a clock later (as s_pat[7])
+always @(posedge clk) spr <= pdx < 11'd16 ? { l_pw[4'd15 - pdx[3:0]], l_po[4'd15 - pdx[3:0]] } : 2'd0;
+
 // ------------------------------------------------------------------ pixels
 
 reg [23:0] s_fg = 24'd0, s_bg = 24'd0;
@@ -362,7 +403,7 @@ always @(posedge clk) begin
 	de <= act_d;
 	hs <= hs_d;
 	vs <= vs_d;
-	rgb <= (act_d && show) ? (s_pat[7] ? s_fg : s_bg) : 24'd0;
+	rgb <= (act_d && show) ? (spr[1] ? 24'hffffff : spr[0] ? 24'h000000 : s_pat[7] ? s_fg : s_bg) : 24'd0;
 end
 
 endmodule

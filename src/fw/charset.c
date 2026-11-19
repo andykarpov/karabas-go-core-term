@@ -19,23 +19,20 @@ size_t charset_in(int cs, const uint8_t *in, size_t n, uint8_t *out) {
     return k;
 }
 
-static uint32_t acc;
-static int need;
-
-size_t charset_out(int cs, const uint8_t *in, size_t n, uint8_t *out) {
+size_t charset_out(int cs, struct cs_out *st, const uint8_t *in, size_t n, uint8_t *out) {
     if (cs <= 0 || cs >= CHARSET_N) { for (size_t i = 0; i < n; i++) out[i] = in[i]; return n; }
     size_t k = 0;
     for (size_t i = 0; i < n; i++) {
         uint8_t b = in[i];
         uint32_t c;
-        if (need) {
-            if ((b & 0xc0) != 0x80) { need = 0; out[k++] = '?'; }
-            else { acc = acc << 6 | (b & 63); if (--need) continue; c = acc; goto have; }
+        if (st->need) {
+            if ((b & 0xc0) != 0x80) { st->need = 0; out[k++] = '?'; }
+            else { st->acc = st->acc << 6 | (b & 63); if (--st->need) continue; c = st->acc; goto have; }
         }
         if (b < 0x80) { out[k++] = b; continue; }
-        if ((b & 0xe0) == 0xc0) { acc = b & 31; need = 1; continue; }
-        if ((b & 0xf0) == 0xe0) { acc = b & 15; need = 2; continue; }
-        if ((b & 0xf8) == 0xf0) { acc = b & 7; need = 3; continue; }
+        if ((b & 0xe0) == 0xc0) { st->acc = b & 31; st->need = 1; continue; }
+        if ((b & 0xf0) == 0xe0) { st->acc = b & 15; st->need = 2; continue; }
+        if ((b & 0xf8) == 0xf0) { st->acc = b & 7; st->need = 3; continue; }
         out[k++] = '?';
         continue;
     have: {

@@ -27,6 +27,7 @@ typedef struct { uint32_t w0, w1; } ts_cell;
 #define TS_CONT 0x1fffffu
 
 typedef struct {
+    VTermState *state;
     ts_cell *ring;                 /* TS_RING x TS_COLS */
     ts_cell *alt;                  /* TS_ROWS x TS_COLS */
     uint16_t row[TS_ROWS];         /* screen row -> physical row (ring index, or TS_RING + alt row) */

@@ -1,5 +1,6 @@
-/* MMIO of the board SoC (src/rtl/term_soc.v). SRAM 4 MB at 0: program 0..1 MB, row ring 0x100000,
-   alternate screen 0x1c0000, font 0x200000 (codepoint * 32). MMIO at 0x80000000 (uncached). */
+/* MMIO of the board SoC (src/rtl/term_soc.v). SRAM 4 MB at 0: program 0..1 MB (with the alternate screens of the
+   tabs, the connection screen and the tab bar row), the row rings of the 4 tabs 0x100000 (256 KB each), font
+   0x200000 (codepoint * 32). MMIO at 0x80000000 (uncached). Docs/PLAN.md Ф5. */
 #pragma once
 #include <stdint.h>
 
@@ -11,7 +12,8 @@
 #define IO_KBD0      IO(0x28)   /* { key 3, key 2, key 1, modifiers } */
 #define IO_KBD1      IO(0x2c)   /* { 0, key 6, key 5, key 4 } */
 #define IO_KBDN      IO(0x30)   /* reports seen */
-#define IO_MOUSE     IO(0x34)
+#define IO_MOUSE     IO(0x34)   /* R: { buttons 31..24, dy 23..12, dx 11..0 } since the last read */
+#define IO_WHEEL     IO(0x38)   /* R: wheel steps since the last read (signed 8 bits, + = away from the user) */
 #define IO_US        IO(0x40)
 #define IO_TCMP      IO(0x44)
 #define IO_TEN       IO(0x48)
@@ -29,9 +31,10 @@
 #define IO_SHOW      IO(0x8c)
 #define IO_FRAMES    IO(0x90)
 #define IO_BELL      IO(0x94)   /* W: a short tone (880 Hz, 120 ms) */
+#define IO_POINTER   IO(0x98)   /* W: the mouse pointer { on 31, y 25..16, x 9..0 } (pixels, the tip of the arrow) */
 #define IO_ROWTAB(n) IO(0x100 + 4 * (n))  /* SRAM byte address of the row / 1024 */
 #define IO_PAL(n)    IO(0x400 + 4 * (n))  /* 0x00RRGGBB */
 
-#define RING_BASE  0x00100000u
-#define ALT_BASE   0x001c0000u
+#define RING_BASE  0x00100000u    /* + tab * RING_SIZE */
+#define RING_SIZE  0x00040000u    /* TS_RING (256) rows of 1 KB */
 #define FONT_BASE  0x00200000u

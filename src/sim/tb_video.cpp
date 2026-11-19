@@ -2,7 +2,7 @@
 // the gather port served like term_sram (a take every 2 clocks in runs, a CPU-like gap between runs),
 // a frame captured to PPM; ref_video.py renders the same screen in Python and compares.
 // usage: tb_video <sram image 4 MB> <regs file> <out.ppm> [frames 2]
-//   regs file: lines "row n v", "pal i rgb", "deffg rgb", "defbg rgb", "cursor v" (hex)
+//   regs file: lines "row n v", "pal i rgb", "deffg rgb", "defbg rgb", "cursor v", "pointer v" (hex: IO_POINTER)
 #include "Vterm_video.h"
 #include "verilated.h"
 #include <cstdio>
@@ -19,7 +19,7 @@ int main(int argc, char **argv) {
     Vterm_video *t = new Vterm_video;
     t->clk = 0; t->reset = 1; t->show = 1; t->fetch_en = 1; t->vid_take = 0; t->vid_dv = 0; t->vid_d = 0;
     t->row_we = 0; t->pal_we = 0; t->def_fg = 0xd0d0d0; t->def_bg = 0; t->cur_x = 0; t->cur_y = 0; t->cur_on = 0;
-    t->cur_shape = 0; t->cur_blink = 0;
+    t->cur_shape = 0; t->cur_blink = 0; t->ptr_on = 0; t->ptr_x = 0; t->ptr_y = 0;
     struct W { int kind; uint32_t a, v; };
     std::vector<W> writes;
     FILE *rf = fopen(argv[2], "r"); char kind[16]; unsigned a, v;
@@ -28,6 +28,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(kind, "pal")) { fscanf(rf, "%x %x", &a, &v); writes.push_back({1, a, v}); }
         else if (!strcmp(kind, "deffg")) { fscanf(rf, "%x", &v); t->def_fg = v; }
         else if (!strcmp(kind, "defbg")) { fscanf(rf, "%x", &v); t->def_bg = v; }
+        else if (!strcmp(kind, "pointer")) { fscanf(rf, "%x", &v); t->ptr_x = v & 0x3ff; t->ptr_y = (v >> 16) & 0x3ff; t->ptr_on = v >> 31; }
         else if (!strcmp(kind, "cursor")) { fscanf(rf, "%x", &v); t->cur_x = v & 0x7f; t->cur_y = (v >> 8) & 0x3f; t->cur_on = (v >> 15) & 1; t->cur_shape = (v >> 16) & 3; t->cur_blink = 0; }
     }
     fclose(rf);
