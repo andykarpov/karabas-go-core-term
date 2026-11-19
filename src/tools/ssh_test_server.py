@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Ф3 test SSH server (asyncssh) for the SSH client of the term core (src/fw/ssh.c): host test test_ssh and the
-tb_soc sims. Only on 127.0.0.1, test accounts only:
+tb_soc sims, the board test (--bind the LAN address, only while the test runs). Test accounts only:
   user "test", password "secret" (password + keyboard-interactive), or a public key of --authorized
 The shell: prints TERM and the size, then commands (one per line):
   big N     N bytes of text (window adjust: N > 512 KB)
@@ -15,6 +15,7 @@ import asyncssh
 
 ap = argparse.ArgumentParser()
 ap.add_argument('--port', type=int, default=2222)
+ap.add_argument('--bind', default='127.0.0.1', help='the address to listen on (the board test: the LAN address of the PC)')
 ap.add_argument('--keydir', default=os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'sim', 'ssh_keys'))
 ap.add_argument('--authorized', default=None)
 ap.add_argument('--rekey-bytes', type=int, default=None)
@@ -93,8 +94,8 @@ async def main():
                 kex_algs=['curve25519-sha256', 'curve25519-sha256@libssh.org'])
     if a.authorized: opts['authorized_client_keys'] = a.authorized
     if a.rekey_bytes: opts['rekey_bytes'] = a.rekey_bytes
-    await asyncssh.create_server(Server, '127.0.0.1', a.port, **opts)
-    print(f'ssh test server on 127.0.0.1:{a.port}', file=sys.stderr, flush=True)
+    await asyncssh.create_server(Server, a.bind, a.port, **opts)
+    print(f'ssh test server on {a.bind}:{a.port}', file=sys.stderr, flush=True)
     await asyncio.Event().wait()
 
 asyncio.run(main())

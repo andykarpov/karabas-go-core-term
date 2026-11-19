@@ -1,7 +1,7 @@
 {
     "id": "term",
     "name": "Terminal",
-    "build": "26111901",
+    "build": "26111910",
     "visible": true,
     "type": "osd",
     "order": 31,
@@ -76,7 +76,7 @@
     "boards": {
         "minig": {
             "link": 2,
-            "build": "26111901",
+            "build": "26111910",
             "bitstream": "karabas_minig.bin"
         }
     },
