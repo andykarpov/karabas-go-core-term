@@ -171,7 +171,7 @@ assign MCU_IO[5:2] = 4'bzzzz;
 
 wire [55:0] kbd;
 wire kbd_wr;
-wire [7:0] ms_x, ms_y, ms_b;
+wire [7:0] ms_x, ms_y, ms_z, ms_b;
 wire ms_wr;
 wire [1:0] ld_kind;
 wire [7:0] ld_slot, ld_data;
@@ -229,7 +229,7 @@ kg_mcu2 #(
 	.BUSY(), .BTNS(), .RELOAD_REQ(1'b0), .RELOAD_CORE(8'd0),
 	.KBD(kbd), .KBD_WR(kbd_wr),
 	.PS2_CODE(), .PS2_KIND(), .PS2_WR(),
-	.MS_X(ms_x), .MS_Y(ms_y), .MS_Z(), .MS_B(ms_b), .MS_WR(ms_wr),
+	.MS_X(ms_x), .MS_Y(ms_y), .MS_Z(ms_z), .MS_B(ms_b), .MS_WR(ms_wr),
 	.JOY_L(), .JOY_R(), .JOY_WR(),
 	.PS2_CMD(16'h0000), .PS2_CMD_WR(1'b0),
 	.LD_KIND(ld_kind), .LD_SLOT(ld_slot), .LD_SIZE(), .LD_EXT(), .LD_START(), .LD_ACTIVE(ld_active), .LD_END(),
@@ -285,7 +285,7 @@ term_soc soc (
 	.reset(areset | sw_reset),
 	.ld_kind(ld_kind), .ld_slot(ld_slot), .ld_active(ld_active),
 	.ld_addr(ld_addr), .ld_data(ld_data), .ld_wr(ld_wr), .ld_ready(ld_ready),
-	.kbd(kbd), .kbd_wr(kbd_wr), .ms_x(ms_x), .ms_y(ms_y), .ms_b(ms_b), .ms_wr(ms_wr),
+	.kbd(kbd), .kbd_wr(kbd_wr), .ms_x(ms_x), .ms_y(ms_y), .ms_z(ms_z), .ms_b(ms_b), .ms_wr(ms_wr),
 	.sw({ 16'd0, sw }),
 	.ser_out_data(port_out_data[7:0]), .ser_out_wr(port_out_wr[0]), .ser_out_ready(ser_out_ready),
 	.ser_in_data(ser_in_data), .ser_in_wr(ser_in_wr), .ser_in_full(port_in_full[0]), .ser_cfg(32'd0),

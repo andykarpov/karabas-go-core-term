@@ -9,7 +9,7 @@
  doom_soc.v of karabas-go-core-doom.
 
  Memory map of the CPU (src/fw/mmio_hw.h):
-   0x00000000 SRAM 4 MB: program 0..1 MB, the row ring 0x100000, the alternate screen 0x1c0000, the font
+   0x00000000 SRAM 4 MB: program 0..1 MB (with the alternate screens), the row rings 0x100000, the font
               0x200000 (codepoint * 32 bytes)
    0x80000000 MMIO (uncached: VexRiscv IO range = bit 31), word registers:
      00 W  DBG: a byte of the debug console (kept as dbg_byte)     08 W  EXIT: the code (dbg_exit)
@@ -17,6 +17,7 @@
            the timer interrupt (VexRiscv timerInterrupt, level): TEN and US - TCMP >= 0
      28 R  KBD0 = kg_mcu2 KBD[31:0] { key 3, key 2, key 1, modifiers }   2c R  KBD1 { 0, key 6, 5, 4 }
      30 R  KBDN: reports seen        34 R  MOUSE (as core-doom)    50 R  SW: the OSD switches
+     38 R  WHEEL: the wheel steps (kg_mcu2 MS_Z, signed, saturated) since the last read
      60 R  SER_RX: bit 8 = a byte, 7..0 the byte (the read takes it) of the USB serial port
      64 W  SER_TX: a byte to the host (dropped when SER_STAT bit 1)
      68 R  SER_STAT: bit 0 rx bytes waiting, bit 1 tx full          6c R  SER_CFG: kg_mcu2 PORT_CFG port 0
@@ -26,6 +27,7 @@
      80 W  DEF_FG   84 W  DEF_BG (0x00RRGGBB)
      88 W  CURSOR: { blink 24, shape 17..16, on 15, y 13..8, x 6..0 }
      8c W  SHOW (bit 0)              90 R  FRAMES (vsyncs)          94 W  BELL: a pulse on bell
+     98 W  POINTER: the mouse pointer of term_video { on 31, y 25..16, x 9..0 }
      c0..d0, 1000..17fc: term_sd (the save file of the phonebook, its sector buffer)
      100..1bc W  ROWTAB[(a - 100) / 4] = the row of screen row n: SRAM byte address / 1024 (12 bits)
      400..7fc W  PAL[(a - 400) / 4] = 0x00RRGGBB
@@ -57,6 +59,7 @@ module term_soc #(
 	input wire [7:0] ms_x,
 	input wire [7:0] ms_y,
 	input wire [7:0] ms_b,
+	input wire [7:0] ms_z,
 	input wire ms_wr,
 	input wire [31:0] sw,
 
@@ -234,6 +237,8 @@ reg [6:0] cur_x = 7'd0;
 reg [5:0] cur_y = 6'd0;
 reg cur_on = 1'b0, cur_blink = 1'b0, show = 1'b0;
 reg [1:0] cur_shape = 2'd0;
+reg ptr_on = 1'b0;
+reg [9:0] ptr_x = 10'd0, ptr_y = 10'd0;
 wire [15:0] frames;
 
 term_video video (
@@ -246,6 +251,7 @@ term_video video (
 	.pal_we(pal_we), .pal_wa(pal_wa), .pal_wd(pal_wd),
 	.def_fg(def_fg), .def_bg(def_bg),
 	.cur_x(cur_x), .cur_y(cur_y), .cur_on(cur_on), .cur_shape(cur_shape), .cur_blink(cur_blink),
+	.ptr_on(ptr_on), .ptr_x(ptr_x), .ptr_y(ptr_y),
 	.frames(frames),
 	.rgb(rgb), .hs(hs), .vs(vs), .de(de)
 );
@@ -288,6 +294,7 @@ reg [16:0] ms_cnt = 17'd0;
 reg [31:0] kbd_n = 32'd0;
 reg signed [11:0] ms_dx = 12'sd0, ms_dy = 12'sd0;
 reg [7:0] ms_btn = 8'd0;
+reg signed [7:0] ms_wz = 8'sd0;
 reg io_ack = 1'b0;
 reg io_wait = 1'b0;                          // SER_RX: one clock for rx_q
 reg rx_av = 1'b0;
@@ -322,6 +329,13 @@ function signed [11:0] sat_add(input signed [11:0] a, input [7:0] d);
 		sat_add = (s > 13'sd2047) ? 12'sd2047 : (s < -13'sd2048) ? -12'sd2048 : s[11:0];
 	end
 endfunction
+function signed [7:0] sat_add8(input signed [7:0] a, input [7:0] d);
+	reg signed [8:0] s;
+	begin
+		s = { a[7], a } + { d[7], d };
+		sat_add8 = (s > 9'sd127) ? 8'sd127 : (s < -9'sd128) ? -8'sd128 : s[7:0];
+	end
+endfunction
 
 wire io_req = d_req && d_io && !io_ack && !cpu_reset;
 
@@ -344,6 +358,7 @@ always @(posedge clk) begin
 		ms_cnt <= 17'd0;
 		show <= 1'b0;
 		cur_on <= 1'b0;
+		ptr_on <= 1'b0;
 	end else begin
 		if (us_div == US_DIV - 7'd1) begin us_div <= 7'd0; us <= us + 32'd1; end
 		else us_div <= us_div + 7'd1;
@@ -356,6 +371,7 @@ always @(posedge clk) begin
 		ms_dx <= sat_add(ms_dx, ms_x);
 		ms_dy <= sat_add(ms_dy, ms_y);
 		ms_btn <= ms_b;
+		ms_wz <= sat_add8(ms_wz, ms_z);
 	end
 
 	if (io_req && d_we) begin
@@ -388,6 +404,11 @@ always @(posedge clk) begin
 			end
 			8'h8c: show <= d_dat_o[0];
 			8'h94: bell <= 1'b1;
+			8'h98: begin
+				ptr_x <= d_dat_o[9:0];
+				ptr_y <= d_dat_o[25:16];
+				ptr_on <= d_dat_o[31];
+			end
 			default: ;
 		endcase
 	end else if (io_req && io_low && io_off[11:8] == 4'h0 && io_off[7:0] == 8'h70 && esp_wait != 2'd3) begin
@@ -418,6 +439,10 @@ always @(posedge clk) begin
 					ms_dx <= 12'sd0;
 					ms_dy <= 12'sd0;
 				end
+			end
+			8'h38: begin
+				io_dat <= { {24{ms_wz[7]}}, ms_wz };
+				ms_wz <= ms_wr ? sat_add8(8'sd0, ms_z) : 8'sd0;
 			end
 			8'h40: io_dat <= us;
 			8'h50: io_dat <= sw;

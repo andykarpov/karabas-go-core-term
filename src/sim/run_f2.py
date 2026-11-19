@@ -45,7 +45,7 @@ time.sleep(0.5)
 print('events', events)
 print('server got', bytes(got))
 exp = {'WILL TTYPE': bytes([IAC, WILL, 24]), 'WILL NAWS': bytes([IAC, WILL, 31]),
-       'NAWS 128x48': bytes([IAC, SB, 31, 0, 128, 0, 48, IAC, SE]), 'DO ECHO': bytes([IAC, DO, 1]), 'DO SGA': bytes([IAC, DO, 3]),
+       'NAWS 128x47': bytes([IAC, SB, 31, 0, 128, 0, 47, IAC, SE]), 'DO ECHO': bytes([IAC, DO, 1]), 'DO SGA': bytes([IAC, DO, 3]),
        'TTYPE IS': bytes([IAC, SB, 24, 0]) + b'XTERM-256COLOR' + bytes([IAC, SE]), 'typed hi CR NUL': b'hi\r\x00'}
 ok = True
 for k, v in exp.items():

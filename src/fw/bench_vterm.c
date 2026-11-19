@@ -106,7 +106,7 @@ int main(int argc, char **argv) {
     MARK(1); /* init done */
     for (uint32_t i = 0; i < n; i += CHUNK) {
         uint32_t len = n - i < CHUNK ? n - i : CHUNK;
-        vtfeed(vt, (const char *)in + i, len);
+        { static struct vtfeed vf; vtfeed(&vf, vt, (const char *)in + i, len); }
         vterm_screen_flush_damage(scr);
     }
     MARK(2); /* the whole stream */

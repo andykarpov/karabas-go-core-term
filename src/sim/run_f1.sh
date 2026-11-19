@@ -10,14 +10,14 @@ FONT=${2:-build/font/font_full.bin}
 FW=../fw/build-hw-rv32imO2/term.bin
 W=build/f1
 mkdir -p $W
-printf '\033[1mterm\033[0m: xterm-256color, 128 x 48, USB serial\r\n' > $W/hello.bin
+printf '\033[1mterm\033[0m: xterm-256color, 128 x 47\r\n' > $W/hello.bin
 ok=1
 for s in "$SD"/*.bin; do
 	n=$(basename "$s" .bin)
 	head -c 8000 "$s" > $W/$n.bin
 	cat $W/hello.bin $W/$n.bin > $W/h_$n.bin
 	want=$(../fw/build-host/bench_vterm $W/h_$n.bin | awk '{print $NF}')
-	got=$(./obj_soc/tb_soc $FW $FONT --in $W/$n.bin --rate 300 --hash-frames 2 --shot 0 /dev/null 2>/dev/null | sed -n 's/^DBG.*HASH //p')
+	got=$(./obj_soc/tb_soc $FW $FONT --in $W/$n.bin --sw 0x08000000 --rate 300 --hash-frames 2 --shot 0 /dev/null 2>/dev/null | sed -n 's/^DBG.*HASH //p')
 	if [ "$got" = "$want" ]; then echo "$n: $got = oracle"; else echo "$n: $got != oracle $want"; ok=0; fi
 done
 [ $ok = 1 ]

@@ -6,4 +6,6 @@
 #include <stddef.h>
 #include "vterm.h"
 
-void vtfeed(VTerm *vt, const char *buf, size_t n);
+struct vtfeed { char tail[4]; size_t ntail; };    /* a terminal each (zeroed at the start) */
+
+void vtfeed(struct vtfeed *f, VTerm *vt, const char *buf, size_t n);

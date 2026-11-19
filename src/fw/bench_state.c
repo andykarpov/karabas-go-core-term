@@ -47,7 +47,7 @@ int main(int argc, char **argv) {
     MARK(1);
     for (uint32_t i = 0; i < n; i += CHUNK) {
         uint32_t len = n - i < CHUNK ? n - i : CHUNK;
-        vtfeed(vt, (const char *)in + i, len);
+        { static struct vtfeed vf; vtfeed(&vf, vt, (const char *)in + i, len); }
     }
     MARK(2);
     uint32_t h = 2166136261u;

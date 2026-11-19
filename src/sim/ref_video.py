@@ -70,6 +70,10 @@ for y in range(ROWS):
         struct.pack_into('<II', sram, base + x * 8, *cells[y][x])
 cur_x, cur_y = rnd.randrange(COLS), rnd.randrange(ROWS)
 cursor = cur_x | cur_y << 8 | 1 << 15  # block, no blink
+# the mouse pointer (Ф5): anywhere, the edges too (clipped)
+ptr_x, ptr_y = rnd.choice([rnd.randrange(1024), 1015, 1023, 0]), rnd.choice([rnd.randrange(768), 760, 767, 0])
+ARROW = ["B", "BB", "BWB", "BWWB", "BWWWB", "BWWWWB", "BWWWWWB", "BWWWWWWB", "BWWWWWWWB", "BWWWWWWWWB",
+         "BWWWWWBBBBB", "BWWBWWB", "BWB BWWB", "BB  BWWB", "     BWWB", "      BB"]
 open(os.path.join(wd, 'sram.bin'), 'wb').write(sram)
 with open(os.path.join(wd, 'regs.txt'), 'w') as f:
     for y in range(ROWS):
@@ -77,6 +81,7 @@ with open(os.path.join(wd, 'regs.txt'), 'w') as f:
     for i in range(256):
         f.write(f'pal {i:x} {pal[i]:x}\n')
     f.write(f'deffg {deffg:x}\ndefbg {defbg:x}\ncursor {cursor:x}\n')
+    f.write(f'pointer {1 << 31 | ptr_y << 16 | ptr_x:x}\n')
 
 FRAMES = 2
 r = subprocess.run([os.path.join(HERE, 'obj_video', 'tb_video'), os.path.join(wd, 'sram.bin'), os.path.join(wd, 'regs.txt'),
@@ -146,6 +151,12 @@ for line in range(768):
             c = f if pat >> (7 - i) & 1 else b
             o = (line * 1024 + x * 8 + i) * 3
             img[o:o + 3] = bytes((c >> 16, c >> 8 & 255, c & 255))
+for dy, l in enumerate(ARROW):
+    for dx, ch in enumerate(l):
+        X, Y = ptr_x + dx, ptr_y + dy
+        if ch in 'BW' and X < 1024 and Y < 768:
+            o = (Y * 1024 + X) * 3
+            img[o:o + 3] = b'\xff\xff\xff' if ch == 'W' else b'\x00\x00\x00'
 open(os.path.join(wd, 'ref.ppm'), 'wb').write(b'P6 1024 768 255\n' + bytes(img))
 
 d = open(os.path.join(wd, 'rtl.ppm'), 'rb').read()

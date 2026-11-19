@@ -91,10 +91,9 @@ static int cb_scrollrect(VTermRect r, int down, int right, void *user) {
 }
 
 static void repack_pen(tscreen *s, VTermState *st);
-static VTermState *g_state;
 
-static int cb_initpen(void *user) { repack_pen(user, g_state); return 1; }
-static int cb_setpenattr(VTermAttr a, VTermValue *v, void *user) { (void)a; (void)v; repack_pen(user, g_state); return 1; }
+static int cb_initpen(void *user) { repack_pen(user, ((tscreen *)user)->state); return 1; }
+static int cb_setpenattr(VTermAttr a, VTermValue *v, void *user) { (void)a; (void)v; repack_pen(user, ((tscreen *)user)->state); return 1; }
 
 static int cb_settermprop(VTermProp p, VTermValue *v, void *user) {
     tscreen *s = user;
@@ -142,7 +141,7 @@ void tscreen_init(tscreen *s, VTermState *st, ts_cell *ring, ts_cell *alt) {
     memset(s, 0, sizeof *s);
     s->ring = ring;
     s->alt = alt;
-    g_state = st;
+    s->state = st;
     s->cursor_visible = 1;
     s->cursor_blink = 1;
     s->cursor_shape = VTERM_PROP_CURSORSHAPE_BLOCK;

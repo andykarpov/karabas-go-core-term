@@ -60,7 +60,7 @@ $(B)/%.bin: $(B)/%.elf
 	$(CROSS)objcopy -O binary $< $@
 
 $(BH)/bench_vterm: bench_vterm.c vtfeed.c vtfeed.h compose.c compose_tab.h $(B)/vtsrc/.stamp | $(BH)
-	cc -O2 -DHOST -std=c99 -w -I$(VT)/include -I. -o $@ bench_vterm.c vtfeed.c compose.c $(addprefix $(B)/vtsrc/,$(addsuffix .c,$(VTSRC)))
+	cc -O2 -DHOST -DROWS=47 -std=c99 -w -I$(VT)/include -I. -o $@ bench_vterm.c vtfeed.c compose.c $(addprefix $(B)/vtsrc/,$(addsuffix .c,$(VTSRC)))
 
 $(BH)/bench_state: bench_state.c tscreen.c tscreen.h vtfeed.c vtfeed.h compose.c compose_tab.h $(B)/vtsrc/.stamp | $(BH)
 	cc -O2 -DHOST -std=c99 -w -I$(VT)/include -I. -o $@ bench_state.c tscreen.c vtfeed.c compose.c $(addprefix $(B)/vtsrc/,$(addsuffix .c,$(VTSRC)))
@@ -69,9 +69,10 @@ $(BH)/bench_crypto: bench_crypto.c | $(BH)
 	cc -O2 -DHOST -w -I$(MC) -I$(MC)/optional -o $@ bench_crypto.c $(MC)/monocypher.c $(MC)/optional/monocypher-ed25519.c
 
 # ------------------------------------------------------------------ the board firmware (roms/term.bin)
-# make hw: build-hw-$(ARCH)$(OPT)/term.bin, program at SRAM 0 (term_soc.v), tscreen ring of 768 rows
+# make hw: build-hw-$(ARCH)$(OPT)/term.bin, program at SRAM 0 (term_soc.v); 4 tabs of 128 x 47 under the tab
+# bar, a ring of 256 rows each (docs/PLAN.md Ф5)
 BW      := build-hw-$(ARCH)$(subst -,,$(OPT))
-HWDEFS  := -DTS_RING=768
+HWDEFS  := -DTS_RING=256 -DTS_ROWS=47
 HWCFLAGS := -march=$(ARCH)_zicsr -mabi=ilp32 $(OPT) -g -std=c99 -ffunction-sections -fdata-sections -w $(HWDEFS) -I$(VT)/include -I. -I$(MC) -I$(MC)/optional
 HWOBJ   := $(addprefix $(BW)/,crt0.o term_main.o kbd.o tscreen.o vtfeed.o compose.o esp.o telnet.o charset.o ui.o book.o store.o rng.o sha256.o ssh.o sshkeys.o mc_monocypher.o mc_monocypher-ed25519.o syscalls_hw.o) $(addprefix $(BW)/vt_,$(addsuffix .o,$(VTSRC)))
 hw: $(BW)/term.bin
