@@ -129,7 +129,10 @@ static void repack_pen(tscreen *s, VTermState *st) {
     s->pen_col = pack_color(&fg.color, 0) | (uint32_t)pack_color(&bg.color, 1) << 16;
 }
 
+static int cb_bell(void *user) { ((tscreen *)user)->bells++; return 1; }
+
 static const VTermStateCallbacks cbs = {
+    .bell = cb_bell,
     .putglyph = cb_putglyph, .movecursor = cb_movecursor, .scrollrect = cb_scrollrect, .moverect = cb_moverect,
     .erase = cb_erase, .initpen = cb_initpen, .setpenattr = cb_setpenattr, .settermprop = cb_settermprop,
 };

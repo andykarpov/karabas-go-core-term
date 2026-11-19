@@ -7,7 +7,8 @@
  clk_sys 65 MHz (the SoC, the pixels of 1024 x 768 at 60 Hz, the OSD, HDMI, the MCU link), clk_8 8.02 MHz
  (FT_CLK_OUT).
  Memory: the SRAM only. The SDRAM is never used (its activity disturbs USB, docs/PLAN.md): no clock, NOP.
- Serial: the USB serial port of the MCU = kg_mcu2 port 0 (Ф1); the ESP8266 UART pins in Ф2.
+ Serial: the USB serial port of the MCU = kg_mcu2 port 0; the ESP8266 on UART_RX / UART_TX / UART_CTS
+ (term_uart in term_soc, CTS active 0).
  Soft switches (the index of the item in the osd of core.json): 0 Font (the FL item), 1 Reset.
 */
 module karabas_minig_top (
@@ -104,9 +105,6 @@ assign WWR_N = 1'b1;
 assign WRESET_N = 1'b1;
 assign WD = 16'bz;
 assign ESP32_SPI_CS_N = 1'b1;
-assign UART_RX = 1'bz;
-assign UART_TX = 1'bz;
-assign UART_CTS = 1'bz;
 assign TAPE_OUT = 1'b0;
 assign MIDI_TX = 1'b1;
 assign ADC_CLK = 1'b0;
@@ -197,13 +195,20 @@ wire [3:0] port_out_wr, port_in_full;
 wire ser_out_ready, ser_in_wr;
 wire [7:0] ser_in_data;
 wire [127:0] port_cfg;
+wire [7:0] sdc_img_mounted, sdc_rd, sdc_wr, sdc_byte_in_data, sdc_byte_out_data, img_flush, bk_kind, bk_result;
+wire [63:0] sdc_img_size;
+wire [31:0] sdc_sector, bk_size;
+wire sdc_busy, sdc_done, sdc_error, sdc_byte_in_strobe, bk_mount, bk_flushed;
+wire [2:0] sdc_slot;
+wire [8:0] sdc_byte_addr;
 
 kg_mcu2 #(
 	.SW_N(2),
 	.CS_FILTER(3),
-	.CAPS(16'h0010),     // bit 4: the core drives LD_READY
+	.CAPS(16'h0012),     // bit 4: the core drives LD_READY, bit 1: backup RAM (the phonebook file, term_sd)
 	.ENABLE_OSD(1),
-	.ENABLE_IMG(0),
+	.ENABLE_IMG(1),
+	.IMG_OUT_LATENCY(3), // the address register of kg_l2_img + term_sd (two registers), as core-doom
 	.ENABLE_PORTS(4'b0001), // port 0: the USB serial port
 	.PORT_OUT_AW(6),
 	.PORT_IN_AW(6),
@@ -232,11 +237,11 @@ kg_mcu2 #(
 	.OSD_WR(osd_wr), .OSD_WADDR(osd_waddr), .OSD_WDATA(osd_wdata), .OSD_EN(osd_en),
 	.OSD_FG(osd_fg), .OSD_BG(osd_bg), .OSD_ALPHA(osd_alpha), .OSD_PX(osd_px), .OSD_PY(osd_py),
 	.OSD_PW(osd_pw), .OSD_PH(osd_ph), .OSD_PLACE(osd_place), .OSD_ZOOM(osd_zoom),
-	.SDC_IMG_MOUNTED(), .SDC_IMG_SIZE(), .SDC_RD(8'd0), .SDC_WR(8'd0),
-	.SDC_SECTOR(32'd0), .SDC_BUSY(), .SDC_DONE(), .SDC_ERROR(), .SDC_SLOT(),
-	.SDC_BYTE_IN_STROBE(), .SDC_BYTE_ADDR(), .SDC_BYTE_IN_DATA(),
-	.SDC_BYTE_OUT_DATA(8'd0), .IMG_WP(), .IMG_PHYS_WR(), .IMG_PHYS(), .IMG_FLUSH(), .FDD_CHNG_WR(), .FDD_CHNG(),
-	.BK_MOUNT(1'b0), .BK_FLUSHED(1'b0), .BK_SLOT(3'd0), .BK_SIZE(32'd0), .BK_KIND(8'd0), .BK_RESULT(8'd0),
+	.SDC_IMG_MOUNTED(sdc_img_mounted), .SDC_IMG_SIZE(sdc_img_size), .SDC_RD(sdc_rd), .SDC_WR(sdc_wr),
+	.SDC_SECTOR(sdc_sector), .SDC_BUSY(sdc_busy), .SDC_DONE(sdc_done), .SDC_ERROR(sdc_error), .SDC_SLOT(sdc_slot),
+	.SDC_BYTE_IN_STROBE(sdc_byte_in_strobe), .SDC_BYTE_ADDR(sdc_byte_addr), .SDC_BYTE_IN_DATA(sdc_byte_in_data),
+	.SDC_BYTE_OUT_DATA(sdc_byte_out_data), .IMG_WP(), .IMG_PHYS_WR(), .IMG_PHYS(), .IMG_FLUSH(img_flush), .FDD_CHNG_WR(), .FDD_CHNG(),
+	.BK_MOUNT(bk_mount), .BK_FLUSHED(bk_flushed), .BK_SLOT(3'd1), .BK_SIZE(bk_size), .BK_KIND(bk_kind), .BK_RESULT(bk_result),
 	.FDD_CHNG_REQ(1'b0), .FDD_CHNG_DS(2'd0), .IMG_ACTIVE(),
 	.PORT_OUT_DATA(port_out_data), .PORT_OUT_WR(port_out_wr), .PORT_OUT_READY({ 3'b111, ser_out_ready }),
 	.PORT_IN_DATA({ 24'd0, ser_in_data }), .PORT_IN_WR({ 3'b000, ser_in_wr }),
@@ -267,8 +272,11 @@ generate
 	end
 endgenerate
 
+wire esp_txd, esp_cts_n;
+assign UART_TX = esp_txd;
+assign UART_CTS = esp_cts_n;
 wire [23:0] vid_rgb;
-wire vid_hs, vid_vs, vid_de, cpu_run, dbg_wr;
+wire vid_hs, vid_vs, vid_de, cpu_run, dbg_wr, bell;
 wire [7:0] dbg_byte;
 wire [8:0] dbg_exit;
 
@@ -281,8 +289,14 @@ term_soc soc (
 	.sw({ 16'd0, sw }),
 	.ser_out_data(port_out_data[7:0]), .ser_out_wr(port_out_wr[0]), .ser_out_ready(ser_out_ready),
 	.ser_in_data(ser_in_data), .ser_in_wr(ser_in_wr), .ser_in_full(port_in_full[0]), .ser_cfg(32'd0),
+	.esp_rxd(UART_RX), .esp_txd(esp_txd), .esp_cts_n(esp_cts_n),
+	.sdc_img_mounted(sdc_img_mounted), .sdc_img_size(sdc_img_size), .sdc_rd(sdc_rd), .sdc_wr(sdc_wr),
+	.sdc_sector(sdc_sector), .sdc_busy(sdc_busy), .sdc_done(sdc_done), .sdc_error(sdc_error), .sdc_slot(sdc_slot),
+	.sdc_byte_in_strobe(sdc_byte_in_strobe), .sdc_byte_addr(sdc_byte_addr), .sdc_byte_in_data(sdc_byte_in_data),
+	.sdc_byte_out_data(sdc_byte_out_data), .img_flush(img_flush),
+	.bk_mount(bk_mount), .bk_flushed(bk_flushed), .bk_size(bk_size), .bk_kind(bk_kind), .bk_result(bk_result),
 	.rgb(vid_rgb), .hs(vid_hs), .vs(vid_vs), .de(vid_de),
-	.dbg_byte(dbg_byte), .dbg_wr(dbg_wr), .dbg_exit(dbg_exit), .cpu_run(cpu_run),
+	.dbg_byte(dbg_byte), .dbg_wr(dbg_wr), .dbg_exit(dbg_exit), .cpu_run(cpu_run), .bell(bell),
 	.MA(MA), .MD_I(MD), .MD_O(md_o), .MD_OE_N(md_oe_n), .MWR_N(MWR_N), .MRD_N(MRD_N)
 );
 
@@ -302,7 +316,19 @@ kg_l2_osd_overlay osd (
 	.rgb_o(osd_rgb), .hs_o(osd_hs), .vs_o(osd_vs), .de_o(osd_de)
 );
 
-// 48 kHz audio strobes (silence for now: the bell comes later)
+// the bell: a square wave of 880 Hz (a half period of 36932 clocks at 65 MHz), 120 ms
+reg [16:0] bell_div = 17'd0;
+reg [23:0] bell_left = 24'd0;
+reg bell_sq = 1'b0;
+always @(posedge clk_sys) begin
+	if (bell) bell_left <= 24'd7_800_000;
+	else if (bell_left != 24'd0) bell_left <= bell_left - 24'd1;
+	if (bell_div == 17'd36931) begin bell_div <= 17'd0; bell_sq <= ~bell_sq; end
+	else bell_div <= bell_div + 17'd1;
+end
+wire signed [15:0] snd = bell_left == 24'd0 ? 16'sd0 : (bell_sq ? 16'sd6000 : -16'sd6000);
+
+// 48 kHz audio strobes
 reg [16:0] aud_acc = 17'd0;
 reg aud_stb = 1'b0;
 always @(posedge clk_sys) begin
@@ -336,8 +362,8 @@ hdmi_tx #(.SAMPLE_FREQ(48000), .INPUT_REG(1), .OUTPUT_REG(1)) hdmi (
 	.hsync(hdmi_hs),
 	.de(hdmi_de),
 	.audio_en(~dvi_only_p),
-	.audio_l(24'd0),
-	.audio_r(24'd0),
+	.audio_l({ snd, 8'd0 }),
+	.audio_r({ snd, 8'd0 }),
 	.audio_clk(aud_stb),
 	.tx_clk_n(TMDS_N[3]),
 	.tx_clk_p(TMDS_P[3]),
@@ -345,12 +371,12 @@ hdmi_tx #(.SAMPLE_FREQ(48000), .INPUT_REG(1), .OUTPUT_REG(1)) hdmi (
 	.tx_d_p(TMDS_P[2:0])
 );
 
-// the PCM5102: silence
+// the PCM5102: the bell
 kg_pcm5102 #(.DIV_BITS(4)) dac (
 	.clk(clk_sys),
 	.reset(areset),
-	.left(16'd0),
-	.right(16'd0),
+	.left(snd),
+	.right(snd),
 	.din(DAC_DAT),
 	.bck(DAC_BCK),
 	.lrck(DAC_WS)

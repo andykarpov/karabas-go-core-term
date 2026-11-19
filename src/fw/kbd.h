@@ -5,3 +5,8 @@
 void kbd_init(VTerm *vt);
 void kbd_poll(VTerm *vt);      /* new presses and the key repeat; call often */
 int kbd_layout(void);          /* 0 US, 1 RU (Alt+Shift toggles) */
+
+/* every press first goes here (key = VTERM_KEY_NONE for a character ch); 1 = taken, not sent to libvterm.
+   gui: a Win key is held. */
+extern int (*kbd_hook)(VTermKey key, uint32_t ch, VTermModifier mod, int gui);
+#define KBD_SCROLL_LOCK 0x110000u      /* ch of the Scroll Lock key (the connection screen) */

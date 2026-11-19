@@ -216,6 +216,20 @@ SoC (VexRiscv, SDRAM, SRAM, HDMI 1024 x 768, kg_mcu2), рендерер, libvter
 Драйвер AT (неблокирующий), статус Wi-Fi / IP, telnet с согласованием опций, экран подключения + телефонная книга на
 SD, кодировки (CP437 / CP866 / KOI8-R / CP1251 / ISO-8859-1), звонок. Проверка на telnet-BBS и на своём хосте.
 
+### Ф2 — итог (2026-11-19, ветка f2-esp)
+
+- RTL: term_uart (UART_RX / UART_TX / UART_CTS, 115200, FIFO 2 KB, CTS активен 0 при > 1792), term_sd (файл
+  телефонной книги через backup RAM link v2, из doom_sd), звонок 880 Гц / 120 мс в HDMI и DAC. PAR Mini G 37 % LUT.
+- Прошивка: esp.c (AT 1.7, +IPD, CIPSEND, CLOSED; в модуле ничего не сохраняется), telnet.c (ECHO, SGA, BINARY,
+  TTYPE XTERM-256COLOR, NAWS), charset.c (CP437 / CP866 / KOI8-R / CP1251 / ISO-8859-1), ui.c — экран подключения
+  (альтернативный экран libvterm, Scroll Lock — открыть / вернуться, F8 — разорвать; Win занят: это Menu прошивки),
+  book.c — телефонная книга на SD (/term/font.sav, 64 записи, сохраняются только состоявшиеся подключения, Del).
+- Симуляция: esp_model.h (AT 1.7 на выводах UART, настоящий TCP-сокет), run_f2.py (telnet-сервер на ПК),
+  tb_soc --sd (BK_MOUNT + сектора kg_l2_img).
+- Плата Mini G: настоящий ESP (AT 1.7.6): IP, telnet к серверу на ПК (UTF-8, CJK, цвета, псевдографика),
+  CP866 и KOI8-R, книга переживает перезапуск ядра, Del, звонок (запись звука с захвата: 880 Гц).
+- Экран подключения одобрен пользователем.
+
 ## Ф3 — SSH
 
 Клиент SSH (пароль, затем ключ ed25519), энтропия, known_hosts на SD, экран отпечатка / смены ключа. Мышь xterm,
