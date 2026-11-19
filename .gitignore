@@ -67,6 +67,7 @@ _xmsgs/
 src/fw/build-*
 src/sim/build/
 src/build_*.log
+src/kg_*.stamp
 src/xst/
 src/_ngo/
 src/_xmsgs/
