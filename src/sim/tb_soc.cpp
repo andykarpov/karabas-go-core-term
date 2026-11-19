@@ -155,6 +155,7 @@ int main(int argc, char **argv) {
             }
         }
         t->kbd_wr = 0;
+        if (t->bell) printf("BELL at frame %d\n", frame);
         if (t->ser_in_wr) { host_bytes++; if (host_out) fputc(t->ser_in_data, host_out); }
         if (t->dbg_wr) { char c = (char)t->dbg_byte; if (c == '\n') { printf("DBG %s\n", line.c_str()); line.clear(); } else line += c; }
         // video capture (de / hs / vs of the clock after the edge)

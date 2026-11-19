@@ -28,6 +28,7 @@
 #define IO_CURSOR    IO(0x88)   /* { blink 24, shape 17..16, on 15, y 13..8, x 6..0 } */
 #define IO_SHOW      IO(0x8c)
 #define IO_FRAMES    IO(0x90)
+#define IO_BELL      IO(0x94)   /* W: a short tone (880 Hz, 120 ms) */
 #define IO_ROWTAB(n) IO(0x100 + 4 * (n))  /* SRAM byte address of the row / 1024 */
 #define IO_PAL(n)    IO(0x400 + 4 * (n))  /* 0x00RRGGBB */
 

@@ -25,7 +25,7 @@
      78 R  ESP_STAT: bit 0 rx bytes waiting, bit 1 tx busy, bit 2 rx overrun (sticky), 27..16 rx count
      80 W  DEF_FG   84 W  DEF_BG (0x00RRGGBB)
      88 W  CURSOR: { blink 24, shape 17..16, on 15, y 13..8, x 6..0 }
-     8c W  SHOW (bit 0)              90 R  FRAMES (vsyncs)
+     8c W  SHOW (bit 0)              90 R  FRAMES (vsyncs)          94 W  BELL: a pulse on bell
      c0..d0, 1000..17fc: term_sd (the save file of the phonebook, its sector buffer)
      100..1bc W  ROWTAB[(a - 100) / 4] = the row of screen row n: SRAM byte address / 1024 (12 bits)
      400..7fc W  PAL[(a - 400) / 4] = 0x00RRGGBB
@@ -104,6 +104,7 @@ module term_soc #(
 	// debug
 	output reg [7:0] dbg_byte = 8'd0,
 	output reg dbg_wr = 1'b0,
+	output reg bell = 1'b0,               // one clock per BELL write
 	output reg [8:0] dbg_exit = 9'd0,
 	output wire cpu_run,
 
@@ -327,6 +328,7 @@ wire io_req = d_req && d_io && !io_ack && !cpu_reset;
 always @(posedge clk) begin
 	io_ack <= 1'b0;
 	dbg_wr <= 1'b0;
+	bell <= 1'b0;
 	esp_rd_req <= 1'b0;
 	esp_tx_wr <= 1'b0;
 	row_we <= 1'b0;
@@ -385,6 +387,7 @@ always @(posedge clk) begin
 				cur_blink <= d_dat_o[24];
 			end
 			8'h8c: show <= d_dat_o[0];
+			8'h94: bell <= 1'b1;
 			default: ;
 		endcase
 	end else if (io_req && io_low && io_off[11:8] == 4'h0 && io_off[7:0] == 8'h70 && esp_wait != 2'd3) begin

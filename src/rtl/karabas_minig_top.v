@@ -276,7 +276,7 @@ wire esp_txd, esp_cts_n;
 assign UART_TX = esp_txd;
 assign UART_CTS = esp_cts_n;
 wire [23:0] vid_rgb;
-wire vid_hs, vid_vs, vid_de, cpu_run, dbg_wr;
+wire vid_hs, vid_vs, vid_de, cpu_run, dbg_wr, bell;
 wire [7:0] dbg_byte;
 wire [8:0] dbg_exit;
 
@@ -296,7 +296,7 @@ term_soc soc (
 	.sdc_byte_out_data(sdc_byte_out_data), .img_flush(img_flush),
 	.bk_mount(bk_mount), .bk_flushed(bk_flushed), .bk_size(bk_size), .bk_kind(bk_kind), .bk_result(bk_result),
 	.rgb(vid_rgb), .hs(vid_hs), .vs(vid_vs), .de(vid_de),
-	.dbg_byte(dbg_byte), .dbg_wr(dbg_wr), .dbg_exit(dbg_exit), .cpu_run(cpu_run),
+	.dbg_byte(dbg_byte), .dbg_wr(dbg_wr), .dbg_exit(dbg_exit), .cpu_run(cpu_run), .bell(bell),
 	.MA(MA), .MD_I(MD), .MD_O(md_o), .MD_OE_N(md_oe_n), .MWR_N(MWR_N), .MRD_N(MRD_N)
 );
 
@@ -316,7 +316,19 @@ kg_l2_osd_overlay osd (
 	.rgb_o(osd_rgb), .hs_o(osd_hs), .vs_o(osd_vs), .de_o(osd_de)
 );
 
-// 48 kHz audio strobes (silence for now: the bell comes later)
+// the bell: a square wave of 880 Hz (a half period of 36932 clocks at 65 MHz), 120 ms
+reg [16:0] bell_div = 17'd0;
+reg [23:0] bell_left = 24'd0;
+reg bell_sq = 1'b0;
+always @(posedge clk_sys) begin
+	if (bell) bell_left <= 24'd7_800_000;
+	else if (bell_left != 24'd0) bell_left <= bell_left - 24'd1;
+	if (bell_div == 17'd36931) begin bell_div <= 17'd0; bell_sq <= ~bell_sq; end
+	else bell_div <= bell_div + 17'd1;
+end
+wire signed [15:0] snd = bell_left == 24'd0 ? 16'sd0 : (bell_sq ? 16'sd6000 : -16'sd6000);
+
+// 48 kHz audio strobes
 reg [16:0] aud_acc = 17'd0;
 reg aud_stb = 1'b0;
 always @(posedge clk_sys) begin
@@ -350,8 +362,8 @@ hdmi_tx #(.SAMPLE_FREQ(48000), .INPUT_REG(1), .OUTPUT_REG(1)) hdmi (
 	.hsync(hdmi_hs),
 	.de(hdmi_de),
 	.audio_en(~dvi_only_p),
-	.audio_l(24'd0),
-	.audio_r(24'd0),
+	.audio_l({ snd, 8'd0 }),
+	.audio_r({ snd, 8'd0 }),
 	.audio_clk(aud_stb),
 	.tx_clk_n(TMDS_N[3]),
 	.tx_clk_p(TMDS_P[3]),
@@ -359,12 +371,12 @@ hdmi_tx #(.SAMPLE_FREQ(48000), .INPUT_REG(1), .OUTPUT_REG(1)) hdmi (
 	.tx_d_p(TMDS_P[2:0])
 );
 
-// the PCM5102: silence
+// the PCM5102: the bell
 kg_pcm5102 #(.DIV_BITS(4)) dac (
 	.clk(clk_sys),
 	.reset(areset),
-	.left(16'd0),
-	.right(16'd0),
+	.left(snd),
+	.right(snd),
 	.din(DAC_DAT),
 	.bck(DAC_BCK),
 	.lrck(DAC_WS)

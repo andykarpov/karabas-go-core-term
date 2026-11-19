@@ -247,6 +247,7 @@ int main(void) {
         poll_net();
         { static int was; book_poll(); if (book_ready() != was) { was = book_ready(); ui_redraw(); } }
         kbd_poll(vt);
+        { static uint32_t bells; if (ts.bells != bells) { bells = ts.bells; IO_BELL = 1; } }
         push_screen();
     }
 }
