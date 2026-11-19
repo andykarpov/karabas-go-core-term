@@ -8,7 +8,7 @@ mkdir -p "$W"
 MC=../../upstream/monocypher/src
 mkdir -p build-host
 cc -O1 -g -std=c99 -D_DEFAULT_SOURCE -Wall -Wextra -Wno-format-truncation -fsanitize=address,undefined \
-   -I$MC -I$MC/optional -I. -o build-host/test_ssh test_ssh.c ssh.c sha256.c $MC/monocypher.c $MC/optional/monocypher-ed25519.c || exit 1
+   -I$MC -I$MC/optional -I. -o build-host/test_ssh test_ssh.c ssh.c sha256.c pk.c $MC/monocypher.c $MC/optional/monocypher-ed25519.c || exit 1
 export ASAN_OPTIONS=detect_leaks=0
 T=./build-host/test_ssh
 PIDS=()
@@ -59,12 +59,39 @@ grep -Eq 'kexes ([2-9][0-9]|[0-9]{3,}) strict 1' "$W/big_rekey.err" || { echo "F
 # the exit status goes through
 checkfail exit_status 'status 3' $T 127.0.0.1 2224 test -K "$W/known" -a secret -s 'exit 3\r'
 # a changed host key: refused unless "replace"
-grep -v ' 2224 ' "$W/known" > "$W/known2"; echo "127.0.0.1 2224 $(printf '%064d' 0)" >> "$W/known2"
+grep -v ' 2224 ' "$W/known" > "$W/known2"; echo "127.0.0.1 2224 0 $(printf '%064d' 0)" >> "$W/known2"
 checkfail changed_key 'verification failed' $T 127.0.0.1 2224 test -K "$W/known2" -a yes
 grep -q 'IDENTIFICATION HAS CHANGED' "$W/changed_key.out" || { echo "FAIL changed key warning"; FAIL=1; }
 check changed_replace 'got: z' $T 127.0.0.1 2224 test -K "$W/known2" -a replace -a secret -s 'z\r' -s 'exit 0\r'
 # refused new host
 checkfail new_host_no 'verification failed' $T 127.0.0.1 2224 test -a no
+# Ф6: host keys ECDSA / RSA: a new host each (the fingerprint == ssh-keygen), the login, a rekey with ECDSA
+server 2231 --pw-only --hostkeys ecdsa-sha2-nistp256 --rekey-bytes 65536
+server 2232 --pw-only --hostkeys ecdsa-sha2-nistp384
+server 2233 --pw-only --hostkeys ecdsa-sha2-nistp521
+server 2234 --pw-only --hostkeys ssh-rsa-2048
+server 2235 --pw-only --hostkeys ssh-rsa-4096
+server 2236 --pw-only --hostkeys ssh-ed25519,ssh-rsa-3072
+fp() { chmod 600 "$W/keys/$1"; ssh-keygen -lf "$W/keys/$1" | awk '{print $2}'; }   # ssh-keygen ignores a 0664 key
+for t in 2231:ecdsa-sha2-nistp256:ECDSA 2232:ecdsa-sha2-nistp384:ECDSA 2233:ecdsa-sha2-nistp521:ECDSA 2234:ssh-rsa-2048:RSA 2235:ssh-rsa-4096:RSA; do
+    IFS=: read -r port key name <<< "$t"
+    check "hk_$key" 'got: k' $T 127.0.0.1 "$port" test -K "$W/known" -a yes -a secret -s 'k\r' -s 'exit 0\r'
+    f=$(fp "host_$key")
+    [ -n "$f" ] && grep -q "$name key fingerprint is $f" "$W/hk_$key.out" && echo "ok   hk_$key fingerprint $f" || { echo "FAIL hk_$key fingerprint '$f'"; FAIL=1; }
+done
+check rsa_sha256 'got: r' $T 127.0.0.1 2234 test -K "$W/known" -H rsa-sha2-256 -a secret -s 'r\r' -s 'exit 0\r'
+check rsa_sha512 'got: r' $T 127.0.0.1 2234 test -K "$W/known" -H rsa-sha2-512 -a secret -s 'r\r' -s 'exit 0\r'
+check ecdsa_rekey 'BIG DONE' $T 127.0.0.1 2231 test -K "$W/known" -a secret -s 'big 400000\r' -s 'exit 0\r' -t 60
+grep -Eq 'kexes ([3-9]|[0-9]{2,}) ' "$W/ecdsa_rekey.err" || { echo "FAIL ecdsa_rekey: no rekeys: $(tail -1 "$W/ecdsa_rekey.err")"; FAIL=1; }
+# a host with ed25519 and RSA: known by its RSA key (first met with -H rsa-sha2-512), it stays RSA without a question
+check known_type_new 'got: a' $T 127.0.0.1 2236 test -K "$W/known" -H rsa-sha2-512 -a yes -a secret -s 'a\r' -s 'exit 0\r'
+check known_type_kept 'got: b' $T 127.0.0.1 2236 test -K "$W/known" -a secret -s 'b\r' -s 'exit 0\r'
+grep -q 'authenticity' "$W/known_type_kept.out" && { echo "FAIL known_type_kept: asked again"; FAIL=1; }
+# known as ed25519, the server has only RSA: the type changed = the warning
+grep -v ' 2234 ' "$W/known" > "$W/known3"
+echo "127.0.0.1 2234 0 $(printf '%064d' 0)" >> "$W/known3"
+checkfail type_changed 'verification failed' $T 127.0.0.1 2234 test -K "$W/known3" -a no
+grep -q 'IDENTIFICATION HAS CHANGED' "$W/type_changed.out" || { echo "FAIL type_changed warning"; FAIL=1; }
 # Ф5: several sessions at once (a tab each): 4 logins, then 2 x 1 MB with rekeys every 64 KB interleaved
 check four_sessions 'got: q' $T 127.0.0.1 2224 test -K "$W/known" -a secret -s 'q\r' -s 'exit 0\r' -n 4
 [ "$(grep -c 'status 0)' "$W/four_sessions.err")" = 4 ] || { echo "FAIL four_sessions: $(grep -c 'status 0)' "$W/four_sessions.err") of 4 exited 0"; FAIL=1; }

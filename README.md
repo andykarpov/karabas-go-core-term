@@ -29,7 +29,8 @@ board yet.
   braille and more without it).
 - **Connections:**
   - **SSH** through the ESP8266: our own small client on [Monocypher](https://monocypher.org): curve25519-sha256 key
-    exchange (strict kex), ssh-ed25519 host keys, chacha20-poly1305 cipher; log in by key (ed25519), by password or
+    exchange (strict kex), host keys ssh-ed25519, ECDSA (P-256 / P-384 / P-521) and RSA (rsa-sha2-256 / 512,
+    1024..8192 bits), chacha20-poly1305 cipher; log in by key (ed25519), by password or
     keyboard-interactive; known_hosts and the user key are kept on the SD card;
   - **telnet** through the ESP8266 (terminal type, window size, binary mode);
   - **raw TCP** through the ESP8266;
@@ -37,8 +38,8 @@ board yet.
 - **Charsets** of old hosts and BBS: UTF-8, CP437, CP866, KOI8-R, CP1251, ISO-8859-1.
 - **Phonebook** on the SD card: the connections that worked (64), with the protocol, port, user and charset.
 
-Not done: RSA / ECDSA host keys (only ssh-ed25519: OpenSSH since 2014 and Dropbear since 2020 have it), port
-forwarding, selecting text with the mouse.
+Not done: port forwarding, selecting text with the mouse, other key exchanges and ciphers (curve25519-sha256 and
+chacha20-poly1305 only: OpenSSH since 6.5 / 2014, Dropbear since 2020).
 
 ## Getting started
 

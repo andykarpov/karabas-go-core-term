@@ -6,6 +6,7 @@
 #include "sha256.h"
 #include "monocypher.h"
 #include "monocypher-ed25519.h"
+#include "pk.h"
 
 #define VERSION "SSH-2.0-KarabasTerm_0.3"
 
@@ -54,7 +55,8 @@ struct ssh {
     uint8_t is_[IS_MAX]; size_t is_n;
     uint8_t session_id[32]; int have_session;
     uint8_t x_sk[32], q_c[32];
-    uint8_t host_pk[32];                  /* the host key of the first kex (a rekey must show the same) */
+    int hk_alg;                           /* the host key algorithm agreed (hk_algs), -1 before */
+    uint8_t hk_hash[32];                  /* SHA-256 of the host key blob of the first kex (a rekey must show the same) */
     int kx;                               /* 0 none, 1 KEXINIT sent, 2 ECDH_INIT sent, 3 NEWKEYS sent */
     int we_sent_kexinit, got_newkeys, sent_newkeys;
     const char *kex_name;
@@ -200,6 +202,32 @@ static int in_list(const uint8_t *l, size_t n, const char *name) {
 
 /* ------------------------------------------------------------------ kex */
 
+/* the host key algorithms in our order (OpenSSH's); key: the name of the key blob */
+static const struct { const char *name, *key, *curve; int kt; } hk_algs[] = {
+    { "ssh-ed25519", "ssh-ed25519", 0, SSH_KT_ED25519 },
+    { "ecdsa-sha2-nistp256", "ecdsa-sha2-nistp256", "nistp256", SSH_KT_P256 },
+    { "ecdsa-sha2-nistp384", "ecdsa-sha2-nistp384", "nistp384", SSH_KT_P384 },
+    { "ecdsa-sha2-nistp521", "ecdsa-sha2-nistp521", "nistp521", SSH_KT_P521 },
+    { "rsa-sha2-512", "ssh-rsa", 0, SSH_KT_RSA },
+    { "rsa-sha2-256", "ssh-rsa", 0, SSH_KT_RSA },
+};
+#define HK_N (int)(sizeof hk_algs / sizeof hk_algs[0])
+
+const char *ssh_kt_name(int kt) { return kt == SSH_KT_ED25519 ? "ED25519" : kt == SSH_KT_RSA ? "RSA" : kt < SSH_KT_N ? "ECDSA" : "?"; }
+
+/* the algorithms we offer, in order: the type known for the host first; a rekey: the one agreed */
+static int hk_order(int *o) {
+    if (S->kex_n) { o[0] = S->hk_alg; return 1; }
+    int known = S->io->hostkey_type ? S->io->hostkey_type(S->host, S->port) : -1, k = 0;
+    for (int pass = 0; pass < 2; pass++)
+        for (int i = 0; i < HK_N; i++) {
+            const char *lim = S->io->hostkey_algs;
+            if (lim && !in_list((const uint8_t *)lim, strlen(lim), hk_algs[i].name)) continue;
+            if ((hk_algs[i].kt == known) == (pass == 0)) o[k++] = i;
+        }
+    return k;
+}
+
 
 static void send_kexinit(void) {
     p_begin(MSG_KEXINIT);
@@ -208,7 +236,12 @@ static void send_kexinit(void) {
     p_raw(cookie, 16);
     p_cstr(S->kex_n ? "curve25519-sha256,curve25519-sha256@libssh.org"
                  : "curve25519-sha256,curve25519-sha256@libssh.org,kex-strict-c-v00@openssh.com");
-    p_cstr("ssh-ed25519");
+    {
+        int o[HK_N], k = hk_order(o);
+        char l[160] = "";
+        for (int i = 0; i < k; i++) { if (i) strcat(l, ","); strcat(l, hk_algs[o[i]].name); }
+        p_cstr(l);
+    }
     p_cstr("chacha20-poly1305@openssh.com");
     p_cstr("chacha20-poly1305@openssh.com");
     p_cstr("hmac-sha2-256,hmac-sha1");
@@ -219,6 +252,7 @@ static void send_kexinit(void) {
     p_cstr("");
     p_byte(0);
     p_u32(0);
+    if (txn > sizeof S->ic) { fail("internal: our KEXINIT is too big"); return; }
     S->ic_n = txn;
     memcpy(S->ic, txp, txn);
     p_send();
@@ -237,7 +271,17 @@ static void on_kexinit(struct rd *r, const uint8_t *payload, size_t n) {
     if (in_list(s[0], l[0], "curve25519-sha256")) S->kex_name = "curve25519-sha256";
     else if (in_list(s[0], l[0], "curve25519-sha256@libssh.org")) S->kex_name = "curve25519-sha256@libssh.org";
     else { fail("the server has no curve25519-sha256 key exchange"); return; }
-    if (!in_list(s[1], l[1], "ssh-ed25519")) { fail("the server has no ssh-ed25519 host key (RSA / ECDSA are not supported)"); return; }
+    {   /* the host key: the first of our list the server has */
+        int o[HK_N], k = hk_order(o), a = -1;
+        for (int i = 0; i < k && a < 0; i++) if (in_list(s[1], l[1], hk_algs[o[i]].name)) a = o[i];
+        if (a < 0) {
+            char b[128];
+            snprintf(b, sizeof b, "no host key type in common (the server has: %.*s)", (int)(l[1] > 70 ? 70 : l[1]), (const char *)s[1]);
+            fail(b);
+            return;
+        }
+        S->hk_alg = a;
+    }
     if (!in_list(s[2], l[2], "chacha20-poly1305@openssh.com") || !in_list(s[3], l[3], "chacha20-poly1305@openssh.com")) {
         fail("the server has no chacha20-poly1305@openssh.com cipher"); return;
     }
@@ -288,19 +332,52 @@ static void send_newkeys(void) {
 
 static void kex_done(void);
 
+/* an mpint >= 0 (its body, a leading zero allowed) */
+static const uint8_t *g_mpint(struct rd *r, size_t *len) {
+    const uint8_t *p = g_str(r, len);
+    if (*len && (p[0] & 0x80)) r->bad = 1;
+    return p;
+}
+static int is_name(const uint8_t *p, size_t n, const char *name) { return n == strlen(name) && !memcmp(p, name, n); }
+
+/* the signature sig (a signature blob) of h by the host key ks (a key blob), by the algorithm agreed:
+   0 ok, else the error */
+static const char *check_host_sig(const uint8_t *ks, size_t ks_n, const uint8_t *sig, size_t sig_n, const uint8_t h[32]) {
+    int a = S->hk_alg, kt = hk_algs[a].kt;
+    struct rd kr = { ks, ks_n, 0 }, sr = { sig, sig_n, 0 };
+    size_t an, sn, bn;
+    const uint8_t *alg = g_str(&kr, &an), *salg = g_str(&sr, &sn), *sb = g_str(&sr, &bn);
+    if (kr.bad || !is_name(alg, an, hk_algs[a].key)) return "the host key is not of the type agreed";
+    if (sr.bad || sr.n || !is_name(salg, sn, hk_algs[a].name)) return "the host signature is not of the type agreed";
+    if (kt == SSH_KT_ED25519) {
+        size_t pn;
+        const uint8_t *pk = g_str(&kr, &pn);
+        if (kr.bad || kr.n || pn != 32 || bn != 64) return "a bad ssh-ed25519 host key";
+        return crypto_ed25519_check(sb, pk, h, 32) ? "the signature of the host is wrong" : 0;
+    }
+    if (kt == SSH_KT_RSA) {
+        size_t en, nn;
+        const uint8_t *e = g_mpint(&kr, &en), *n = g_mpint(&kr, &nn);
+        if (kr.bad || kr.n) return "a bad ssh-rsa host key";
+        return pk_rsa_verify(n, nn, e, en, !strcmp(hk_algs[a].name, "rsa-sha2-512"), h, 32, sb, bn) ? 0
+               : "the signature of the host is wrong (or an RSA key under 1024 / over 8192 bits)";
+    }
+    size_t cn, qn, rn, ssn;
+    const uint8_t *cv = g_str(&kr, &cn), *q = g_str(&kr, &qn);
+    if (kr.bad || kr.n || !is_name(cv, cn, hk_algs[a].curve)) return "a bad ECDSA host key";
+    struct rd sg = { sb, bn, 0 };
+    const uint8_t *rr = g_mpint(&sg, &rn), *ss = g_mpint(&sg, &ssn);
+    if (sg.bad || sg.n) return "a bad ECDSA signature";
+    int curve = kt == SSH_KT_P256 ? PK_P256 : kt == SSH_KT_P384 ? PK_P384 : PK_P521;
+    return pk_ecdsa_verify(curve, q, qn, rr, rn, ss, ssn, h, 32) ? 0 : "the signature of the host is wrong";
+}
+
 static void on_ecdh_reply(struct rd *r) {
     if (S->kx != 2) { fail("an unexpected KEX_ECDH_REPLY"); return; }
     size_t ks_n, qs_n, sig_n;
     const uint8_t *ks = g_str(r, &ks_n), *qs = g_str(r, &qs_n), *sig = g_str(r, &sig_n);
     if (r->bad || qs_n != 32) { fail("a bad KEX_ECDH_REPLY"); return; }
-    struct rd kr = { ks, ks_n, 0 }, sr = { sig, sig_n, 0 };
-    size_t an, pn, sn, bn;
-    const uint8_t *alg = g_str(&kr, &an), *pk = g_str(&kr, &pn);
-    const uint8_t *salg = g_str(&sr, &sn), *sb = g_str(&sr, &bn);
-    if (kr.bad || sr.bad || an != 11 || memcmp(alg, "ssh-ed25519", 11) || pn != 32 || sn != 11 || memcmp(salg, "ssh-ed25519", 11) || bn != 64) {
-        fail("the host key is not ssh-ed25519"); return;
-    }
-    uint8_t k[32], zero[32] = { 0 }, h[32];
+    uint8_t k[32], zero[32] = { 0 }, h[32], kh[32];
     crypto_x25519(k, S->x_sk, qs);
     crypto_wipe(S->x_sk, 32);
     if (!crypto_verify32(k, zero)) { fail("a bad public key of the server"); return; }
@@ -315,28 +392,31 @@ static void on_ecdh_reply(struct rd *r) {
     h_str(&c, qs, 32);
     h_mpint(&c, k);
     sha256_final(&c, h);
-    if (crypto_ed25519_check(sb, pk, h, 32)) { crypto_wipe(k, 32); fail("the signature of the host is wrong"); return; }
+    const char *bad = check_host_sig(ks, ks_n, sig, sig_n, h);
+    if (bad) { crypto_wipe(k, 32); fail(bad); return; }
+    sha256(kh, ks, ks_n);
     if (!S->have_session) { memcpy(S->session_id, h, 32); S->have_session = 1; }
     memset(&S->tx_next, 0, sizeof S->tx_next); memset(&S->rx_next, 0, sizeof S->rx_next);
     S->tx_next.seq = S->tx.seq; S->rx_next.seq = S->rx.seq;
     derive(S->tx_next.key, k, h, 'C');
     derive(S->rx_next.key, k, h, 'D');
     crypto_wipe(k, 32);
-    if (S->kex_n) {                                     /* a rekey: the same host */
-        if (crypto_verify32(pk, S->host_pk)) { fail("the host key changed in a rekey"); return; }
+    if (S->kex_n) {                                     /* a rekey: the same host key */
+        if (crypto_verify32(kh, S->hk_hash)) { fail("the host key changed in a rekey"); return; }
         send_newkeys();
         return;
     }
-    memcpy(S->host_pk, pk, 32);
+    memcpy(S->hk_hash, kh, 32);
+    int kt = hk_algs[S->hk_alg].kt;
     char fp[52];
-    ssh_fingerprint(pk, fp);
-    enum ssh_hk known = S->io->hostkey(S->host, S->port, pk, 0);
+    ssh_fingerprint_hash(kh, fp);
+    enum ssh_hk known = S->io->hostkey(S->host, S->port, kt, kh, 0);
     if (known == SSH_HK_OK) { send_newkeys(); return; }
     if (known == SSH_HK_NEW) {
         snprintf(S->ask_text, sizeof S->ask_text,
                  "The authenticity of host '%s' (port %d) can't be established.\r\n"
-                 "ED25519 key fingerprint is %s.\r\n"
-                 "Are you sure you want to continue connecting (yes/no)? ", S->host, S->port, fp);
+                 "%s key fingerprint is %s.\r\n"
+                 "Are you sure you want to continue connecting (yes/no)? ", S->host, S->port, ssh_kt_name(kt), fp);
         S->ask = A_HOST_NEW;
     } else {
         snprintf(S->ask_text, sizeof S->ask_text,
@@ -346,8 +426,8 @@ static void on_ecdh_reply(struct rd *r) {
                  "IT IS POSSIBLE THAT SOMEONE IS DOING SOMETHING NASTY!\r\n"
                  "Someone could be eavesdropping on you right now (man-in-the-middle attack)!\r\n"
                  "It is also possible that the host key of '%s' (port %d) has just been changed.\r\n"
-                 "The new ED25519 key fingerprint is %s.\r\n"
-                 "Type \"replace\" to trust the new key, anything else disconnects: ", S->host, S->port, fp);
+                 "The new %s key fingerprint is %s.\r\n"
+                 "Type \"replace\" to trust the new key, anything else disconnects: ", S->host, S->port, ssh_kt_name(kt), fp);
         S->ask = A_HOST_CHANGED;
     }
     S->ask_echo = 1;
@@ -740,6 +820,7 @@ void ssh_start(struct ssh *s, const struct ssh_io *io_, void *ctx, const char *h
     S->tried_pk = S->pw_tries = S->kbi_tries = 0; S->last_method = "";
     S->chan_open = S->chan_closed = S->shell_asked = S->replies_wanted = 0; S->lconsumed = 0; S->have_exit = 0;
     S->ask = A_NONE;
+    S->hk_alg = -1;
     S->err[0] = 0;
     snprintf(S->host, sizeof S->host, "%s", h);
     snprintf(S->user, sizeof S->user, "%s", u ? u : "");
@@ -777,13 +858,13 @@ void ssh_answer(struct ssh *s, const char *line) {
     switch (a) {
     case A_HOST_NEW:
         if (strcmp(line, "yes")) { fail("Host key verification failed"); break; }
-        S->io->hostkey(S->host, S->port, S->host_pk, 1);
-        { char b[160]; snprintf(b, sizeof b, "Warning: Permanently added '%s' (ED25519) to the list of known hosts.\r\n", S->host); say(b); }
+        S->io->hostkey(S->host, S->port, hk_algs[S->hk_alg].kt, S->hk_hash, 1);
+        { char b[160]; snprintf(b, sizeof b, "Warning: Permanently added '%s' (%s) to the list of known hosts.\r\n", S->host, ssh_kt_name(hk_algs[S->hk_alg].kt)); say(b); }
         send_newkeys();
         break;
     case A_HOST_CHANGED:
         if (strcmp(line, "replace")) { fail("Host key verification failed"); break; }
-        S->io->hostkey(S->host, S->port, S->host_pk, 1);
+        S->io->hostkey(S->host, S->port, hk_algs[S->hk_alg].kt, S->hk_hash, 1);
         say("The new host key is stored.\r\n");
         send_newkeys();
         break;
@@ -835,12 +916,16 @@ static void key_blob(const uint8_t key[32], uint8_t blob[51]) {
     memcpy(blob + 19, key, 32);
 }
 
+void ssh_fingerprint_hash(const uint8_t hash[32], char out[52]) {
+    memcpy(out, "SHA256:", 7);
+    b64(hash, 32, out + 7, 0);
+}
+
 void ssh_fingerprint(const uint8_t key[32], char out[52]) {
     uint8_t blob[51], h[32];
     key_blob(key, blob);
     sha256(h, blob, sizeof blob);
-    memcpy(out, "SHA256:", 7);
-    b64(h, 32, out + 7, 0);
+    ssh_fingerprint_hash(h, out);
 }
 
 void ssh_pubkey_line(const uint8_t key[32], const char *comment, char *out, size_t size) {

@@ -74,7 +74,7 @@ $(BH)/bench_crypto: bench_crypto.c | $(BH)
 BW      := build-hw-$(ARCH)$(subst -,,$(OPT))
 HWDEFS  := -DTS_RING=256 -DTS_ROWS=47
 HWCFLAGS := -march=$(ARCH)_zicsr -mabi=ilp32 $(OPT) -g -std=c99 -ffunction-sections -fdata-sections -w $(HWDEFS) -I$(VT)/include -I. -I$(MC) -I$(MC)/optional
-HWOBJ   := $(addprefix $(BW)/,crt0.o term_main.o kbd.o tscreen.o vtfeed.o compose.o esp.o telnet.o charset.o ui.o book.o store.o rng.o sha256.o ssh.o sshkeys.o mc_monocypher.o mc_monocypher-ed25519.o syscalls_hw.o) $(addprefix $(BW)/vt_,$(addsuffix .o,$(VTSRC)))
+HWOBJ   := $(addprefix $(BW)/,crt0.o term_main.o kbd.o tscreen.o vtfeed.o compose.o esp.o telnet.o charset.o ui.o book.o store.o rng.o sha256.o ssh.o sshkeys.o pk.o mc_monocypher.o mc_monocypher-ed25519.o syscalls_hw.o) $(addprefix $(BW)/vt_,$(addsuffix .o,$(VTSRC)))
 hw: $(BW)/term.bin
 # the board test firmware (hwtest.c): make hwtest -> build-hw-test/term.bin
 hwtest:
@@ -90,7 +90,7 @@ $(BW)/mc_%.o: $(MC)/%.c | $(BW)
 	$(CROSS)gcc $(HWCFLAGS) -c $< -o $@
 $(BW)/mc_monocypher-ed25519.o: $(MC)/optional/monocypher-ed25519.c | $(BW)
 	$(CROSS)gcc $(HWCFLAGS) -c $< -o $@
-$(BW)/%.o: %.c mmio_hw.h tscreen.h kbd.h vtfeed.h esp.h telnet.h charset.h charset_tab.h ui.h book.h compose_tab.h store.h rng.h sha256.h ssh.h sshkeys.h | $(BW)
+$(BW)/%.o: %.c mmio_hw.h tscreen.h kbd.h vtfeed.h esp.h telnet.h charset.h charset_tab.h ui.h book.h compose_tab.h store.h rng.h sha256.h ssh.h sshkeys.h pk.h | $(BW)
 	$(CROSS)gcc $(HWCFLAGS) -c $< -o $@
 $(BW)/crt0.o: crt0.S | $(BW)
 	$(CROSS)gcc $(ABI) -c $< -o $@

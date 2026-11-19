@@ -7,6 +7,7 @@
      -K FILE     known_hosts of this test: host port hex lines
      -p          print the public key line of -k and quit
      -t SECONDS  give up after this (default 20)
+     -H LIST     the host key algorithms we offer (a comma list; default all)
      -n N        N sessions at once (each its own socket, the same answers and texts); exit 0 if all exited 0
    The session output goes to stdout; the end: "END <state> <error>" on stderr; exit 0 if the shell exited
    with status 0. */
@@ -43,21 +44,31 @@ static void rnd(uint8_t *p, size_t n) {
 }
 static void out(void *ctx, const uint8_t *p, size_t n) { (void)ctx; fwrite(p, 1, n, stdout); fflush(stdout); }
 
-static enum ssh_hk hk(const char *host, int port, const uint8_t key[32], int store) {
+/* known_hosts of the test (-K): lines "host port type hex" (type: ssh_kt; hex: the SHA-256 of the key blob) */
+static enum ssh_hk hk(const char *host, int port, int kt, const uint8_t hash[32], int store) {
     char hex[65];
-    for (int i = 0; i < 32; i++) sprintf(hex + 2 * i, "%02x", key[i]);
+    for (int i = 0; i < 32; i++) sprintf(hex + 2 * i, "%02x", hash[i]);
     if (!known_file) return store ? SSH_HK_OK : SSH_HK_NEW;
     if (store) {
         FILE *f = fopen(known_file, "a");
-        if (f) { fprintf(f, "%s %d %s\n", host, port, hex); fclose(f); }
+        if (f) { fprintf(f, "%s %d %d %s\n", host, port, kt, hex); fclose(f); }
         return SSH_HK_OK;
     }
     FILE *f = fopen(known_file, "r");
     if (!f) return SSH_HK_NEW;
-    char h[80], k[80]; int p;
+    char h[80], k[80]; int p, t;
     enum ssh_hk r = SSH_HK_NEW;
-    while (fscanf(f, "%79s %d %79s", h, &p, k) == 3)
-        if (!strcmp(h, host) && p == port) r = strcmp(k, hex) ? SSH_HK_CHANGED : SSH_HK_OK;   /* the last line wins */
+    while (fscanf(f, "%79s %d %d %79s", h, &p, &t, k) == 4)
+        if (!strcmp(h, host) && p == port) r = (t != kt || strcmp(k, hex)) ? SSH_HK_CHANGED : SSH_HK_OK;   /* the last line wins */
+    fclose(f);
+    return r;
+}
+static int hkt(const char *host, int port) {
+    if (!known_file) return -1;
+    FILE *f = fopen(known_file, "r");
+    if (!f) return -1;
+    char h[80], k[80]; int p, t, r = -1;
+    while (fscanf(f, "%79s %d %d %79s", h, &p, &t, k) == 4) if (!strcmp(h, host) && p == port) r = t;
     fclose(f);
     return r;
 }
@@ -93,6 +104,8 @@ static char *unescape(const char *s) {
 
 static double now(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec + t.tv_nsec / 1e9; }
 
+static const char *hk_list;
+
 int main(int argc, char **argv) {
     if (argc < 4) { fprintf(stderr, "usage: test_ssh host port user [-a answer] [-s text] [-k key] [-K known] [-p] [-t s]\n"); return 2; }
     const char *host = argv[1], *user = argv[3];
@@ -106,6 +119,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "-p")) print_pk = 1;
         else if (!strcmp(argv[i], "-t") && i + 1 < argc) timeout = atof(argv[++i]);
         else if (!strcmp(argv[i], "-n") && i + 1 < argc) nsess = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "-H") && i + 1 < argc) hk_list = argv[++i];
         else { fprintf(stderr, "bad option %s\n", argv[i]); return 2; }
     }
     if (print_pk) {
@@ -119,7 +133,8 @@ int main(int argc, char **argv) {
     hints.ai_family = AF_INET; hints.ai_socktype = SOCK_STREAM;
     char ps[16]; snprintf(ps, sizeof ps, "%d", port);
     if (getaddrinfo(host, ps, &hints, &res)) { fprintf(stderr, "no host\n"); return 2; }
-    static const struct ssh_io io = { tx, rnd, out, hk, uk };
+    static struct ssh_io io = { tx, rnd, out, hk, uk, hkt, 0 };
+    io.hostkey_algs = hk_list;
     static struct t ts[SSH_MAX];
     if (nsess < 1 || nsess > SSH_MAX) { fprintf(stderr, "-n 1..%d\n", SSH_MAX); return 2; }
     for (int i = 0; i < nsess; i++) {
